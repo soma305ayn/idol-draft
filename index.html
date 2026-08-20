@@ -278,13 +278,36 @@ function saveLastRoom(code){
   try{ localStorage.setItem('idol_draft_last_room', code); }catch(e){}
 }
 
+function normalizeState(s){
+  if(!s) return s;
+  s.teams = s.teams || [];
+  s.players = s.players || [];
+  s.log = s.log || [];
+  s.waiverOrder = s.waiverOrder || [];
+  s.round1 = s.round1 || {};
+  s.round1.submissions = s.round1.submissions || {};
+  s.round1.pendingTeamIds = s.round1.pendingTeamIds || [];
+  s.round1.lotteryQueue = s.round1.lotteryQueue || [];
+  if(s.round1.currentLottery===undefined) s.round1.currentLottery = null;
+  if(Array.isArray(s.teams)){
+    s.teams.forEach(t=>{ if(t.claimedBy===undefined) t.claimedBy=null; });
+  }
+  if(Array.isArray(s.players)){
+    s.players.forEach(p=>{
+      if(p.ownerTeamId===undefined) p.ownerTeamId=null;
+      if(p.round===undefined) p.round=null;
+      if(!p.pos) p.pos='';
+    });
+  }
+  return s;
+}
 async function refreshState(){
   if(!roomCode){ state=null; return; }
   try{
     const res=await fetch(roomUrl(), {headers:{'Accept':'application/json'}});
     if(!res.ok) throw new Error(`HTTP ${res.status}`);
     const text=await res.text();
-    state = (text && text!=='null') ? JSON.parse(text) : null;
+    state = (text && text!=='null') ? normalizeState(JSON.parse(text)) : null;
     lastStateStr = text;
     dbg.lastGet={ok:true, at:nowStr(), len:text?text.length:0, err:null};
   }catch(e){
@@ -313,7 +336,7 @@ async function pollLoop(){
     const text=await res.text();
     const changed=(text!==lastStateStr);
     dbg.lastPoll={ok:true, at:nowStr(), changed, err:null};
-    if(changed){ lastStateStr=text; state=(text && text!=='null')?JSON.parse(text):null; render(); }
+    if(changed){ lastStateStr=text; state=(text && text!=='null')?normalizeState(JSON.parse(text)):null; render(); }
     else{ updateDebugPanelInPlace(); }
   }catch(e){
     dbg.lastPoll={ok:false, at:nowStr(), changed:null, err:(e&&e.message)||String(e)};
