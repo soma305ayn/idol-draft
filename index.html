@@ -107,13 +107,20 @@ button:disabled{opacity:0.4; cursor:not-allowed;}
 .badge.wait{background:rgba(140,151,171,0.18); color:var(--muted);}
 .badge.turn{background:rgba(227,179,65,0.18); color:var(--gold-soft);}
 .badge.go{background:rgba(62,137,99,0.22); color:var(--field-light);}
-.player-list{max-height:280px; overflow-y:auto; border:1px solid var(--border); border-radius:10px; margin-top:8px;}
+.player-list{max-height:400px; overflow-y:auto; border:1px solid var(--border); border-radius:10px; margin-top:8px;}
+.player-group{border-bottom:1px solid var(--border);}
+.player-group:last-child{border-bottom:none;}
 .group-header{
-  position:sticky; top:0; z-index:1;
-  font-family:'Oswald',sans-serif; font-size:11.5px; font-weight:600; letter-spacing:.06em;
+  position:sticky; top:0; z-index:1; cursor:pointer; list-style:none;
+  display:flex; align-items:center; gap:6px;
+  font-family:'Oswald',sans-serif; font-size:12.5px; font-weight:600; letter-spacing:.05em;
   color:var(--gold-soft); background:var(--panel-3);
-  padding:6px 12px; border-bottom:1px solid var(--border);
+  padding:10px 12px; border-bottom:1px solid var(--border);
 }
+.group-header::-webkit-details-marker{display:none;}
+.group-header::before{content:"▸"; font-size:11px; transition:transform .15s ease; color:var(--field-light);}
+.player-group[open]>.group-header::before{transform:rotate(90deg);}
+.group-count{color:var(--muted); font-weight:400; letter-spacing:0;}
 .player-item{
   display:flex; align-items:center; gap:10px; padding:10px 12px;
   border-bottom:1px solid var(--border); cursor:pointer;
@@ -398,16 +405,6 @@ async function releaseTeam(){
     await saveState(); render();
   }catch(e){ showToast('エラーが発生しました。もう一度お試しください。'); }
 }
-async function addPlayer(name, pos){
-  if(!name.trim()) return showToast('選手名を入力してください');
-  try{
-    await refreshState();
-    if(stateLostGuard()) return;
-    if(state.players.some(p=>p.name===name.trim())) return showToast('同名の選手がすでに登録されています');
-    state.players.push({id:uid('p'), name:name.trim(), pos:(pos||'').trim(), status:'available', ownerTeamId:null, round:null});
-    await saveState(); render();
-  }catch(e){ showToast('エラーが発生しました。もう一度お試しください。'); }
-}
 async function startDraft(){
   try{
     await refreshState();
@@ -581,24 +578,36 @@ function groupByAffiliation(players){
   order.sort((a,b)=> a==='その他' ? 1 : b==='その他' ? -1 : a.localeCompare(b,'ja'));
   return order.map(k=>({affiliation:k, players:groups[k]}));
 }
+let openGroups={};
+function groupKey(prefix, affiliation){ return `${prefix}::${affiliation}`; }
 function playerListHTML(idPrefix, selectable){
   const available=state.players.filter(p=>p.status==='available');
   const taken=state.players.filter(p=>p.status==='taken');
   let html=`<div class="player-list" id="${idPrefix}-list">`;
   groupByAffiliation(available).forEach(g=>{
-    html+=`<div class="group-header">${esc(g.affiliation)}</div>`;
+    const key=groupKey(idPrefix, g.affiliation);
+    const hasSelected = g.players.some(p=>selectedPlayerId===p.id);
+    const isOpen = openGroups[key]!==undefined ? openGroups[key] : hasSelected;
+    html+=`<details class="player-group" data-gkey="${esc(key)}" ${isOpen?'open':''}>
+      <summary class="group-header">${esc(g.affiliation)} <span class="group-count">(${g.players.length})</span></summary>`;
     g.players.forEach(p=>{
       html+=`<div class="player-item ${selectedPlayerId===p.id?'selected':''}" data-act="select-player" data-id="${p.id}">
         <div><div class="pname">${esc(p.name)}</div>${p.pos?`<div class="ppos">${esc(p.pos)}</div>`:''}</div>
       </div>`;
     });
+    html+='</details>';
   });
-  if(available.length===0) html+=`<div style="padding:14px;color:var(--muted);font-size:13px;">指名可能な選手がいません。選手を追加してください。</div>`;
+  if(available.length===0) html+=`<div style="padding:14px;color:var(--muted);font-size:13px;">指名可能な選手がいません。</div>`;
   html+='</div>';
   if(taken.length>0){
     html+=`<div class="note">指名済み: ${taken.map(p=>esc(p.name)).join('、')}</div>`;
   }
   return html;
+}
+function bindGroupToggles(){
+  document.querySelectorAll('.player-group[data-gkey]').forEach(el=>{
+    el.addEventListener('toggle', ()=>{ openGroups[el.dataset.gkey]=el.open; });
+  });
 }
 function boardHTML(){
   const rounds=[...new Set(state.log.map(l=>l.round))].sort((a,b)=>a-b);
@@ -692,7 +701,6 @@ function renderJoinScreen(){
   html+=`</div>`;
   if(state.phase==='setup'){
     html+=`<div class="card"><h2>登録済み選手 (${state.players.length}人)</h2>${playerPoolListHTML()}</div>
-    ${playerPoolAddSectionHTML()}
     <button class="btn-gold btn-block" data-act="start-draft">全員揃ったらドラフト開始</button>`;
   } else {
     html+=`<div class="card"><h2>ドラフトはすでに進行中です</h2><p class="note">担当球団を選ぶと途中から参加できます。</p></div>`;
@@ -700,28 +708,21 @@ function renderJoinScreen(){
   html+=`<div class="foot-reset"><button class="btn-ghost foot-link" data-act="leave-room">別のコードを使う/入り直す</button> <button class="btn-ghost foot-link" data-act="reset-room">この部屋をリセットする</button></div></div>`;
   app.innerHTML=html;
 }
-function playerPoolFormHTML(){
-  return `<label>選手名</label><input type="text" id="in-pname" placeholder="例：山田太郎">
-  <label>所属（任意）</label><input type="text" id="in-ppos" placeholder="例：櫻坂46">
-  <button class="btn-primary btn-block" data-act="add-player">選手を追加</button>`;
-}
-function playerPoolAddSectionHTML(){
-  return `<details class="card add-section">
-    <summary>選手を追加登録する（任意・予備）</summary>
-    <div style="margin-top:10px;">${playerPoolFormHTML()}</div>
-  </details>`;
-}
 function playerPoolListHTML(){
-  if(state.players.length===0) return `<p class="note">まだ選手が登録されていません。参加者みんなで自由に候補選手を追加していきましょう。</p>`;
+  if(state.players.length===0) return `<p class="note">まだ選手が登録されていません。</p>`;
   let html=`<div class="player-list">`;
   groupByAffiliation(state.players).forEach(g=>{
-    html+=`<div class="group-header">${esc(g.affiliation)}</div>`;
+    const key=groupKey('pool', g.affiliation);
+    const isOpen = openGroups[key]!==undefined ? openGroups[key] : false;
+    html+=`<details class="player-group" data-gkey="${esc(key)}" ${isOpen?'open':''}>
+      <summary class="group-header">${esc(g.affiliation)} <span class="group-count">(${g.players.length})</span></summary>`;
     g.players.forEach(p=>{
       html+=`<div class="player-item ${p.status==='taken'?'taken':''}">
         <div><div class="pname">${esc(p.name)}</div>${p.pos?`<div class="ppos">${esc(p.pos)}</div>`:''}</div>
         ${p.status==='taken'?`<div class="picked-tag">${esc(teamById(p.ownerTeamId)?.name||'')}が指名</div>`:''}
       </div>`;
     });
+    html+='</details>';
   });
   html+='</div>';
   return html;
@@ -738,7 +739,6 @@ function renderSetupScreen(){
       <div class="meta">${t.claimedBy?esc(t.claimedBy):'空席'}</div></div>`).join('')}
   </div>
   <div class="card"><h2>登録済み選手 (${state.players.length}人)</h2>${playerPoolListHTML()}</div>
-  ${playerPoolAddSectionHTML()}
   <button class="btn-gold btn-block" data-act="start-draft">ドラフト開始</button>
   <div class="foot-reset"><button class="btn-ghost foot-link" data-act="leave-room">別のコードを使う/入り直す</button> <button class="btn-ghost foot-link" data-act="reset-room">この部屋をリセットする</button></div>
   </div>`;
@@ -832,20 +832,20 @@ function filterPlayers(listId, q){
   const list=document.getElementById(listId);
   if(!list) return;
   const query=q.trim().toLowerCase();
-  const children=Array.from(list.children);
-  let lastHeader=null, headerHasVisible=false;
-  children.forEach(el=>{
-    if(el.classList.contains('group-header')){
-      if(lastHeader) lastHeader.style.display = headerHasVisible ? '' : 'none';
-      lastHeader=el; headerHasVisible=false;
-      return;
+  const groups=Array.from(list.querySelectorAll('.player-group'));
+  groups.forEach(group=>{
+    let hasVisible=false;
+    group.querySelectorAll('.player-item').forEach(el=>{
+      const name=el.querySelector('.pname')?.textContent.toLowerCase()||'';
+      const visible=name.includes(query);
+      el.style.display = visible ? '' : 'none';
+      if(visible) hasVisible=true;
+    });
+    group.style.display = hasVisible ? '' : 'none';
+    if(query){
+      if(hasVisible){ group.open=true; openGroups[group.dataset.gkey]=true; }
     }
-    const name=el.querySelector('.pname')?.textContent.toLowerCase()||'';
-    const visible=name.includes(query);
-    el.style.display = visible ? '' : 'none';
-    if(visible) headerHasVisible=true;
   });
-  if(lastHeader) lastHeader.style.display = headerHasVisible ? '' : 'none';
 }
 
 /* ---------- master render ---------- */
@@ -896,6 +896,7 @@ function render(){
   else if(state.phase==='lottery') renderLottery();
   else if(state.phase==='snake_pick') renderSnakePick();
   else if(state.phase==='finished') renderFinished();
+  bindGroupToggles();
   appendDebugPanel();
 }
 
@@ -916,10 +917,7 @@ app.addEventListener('click', (e)=>{
     const nick=document.getElementById('in-nick').value;
     claimTeam(id, nick);
   } else if(act==='release-team'){ showConfirm('担当を解除しますか？','解除する').then(ok=>{ if(ok) releaseTeam(); }); }
-  else if(act==='add-player'){
-    const n=document.getElementById('in-pname'), p=document.getElementById('in-ppos');
-    addPlayer(n.value, p.value); n.value=''; p.value='';
-  } else if(act==='start-draft'){ startDraft(); }
+  else if(act==='start-draft'){ startDraft(); }
   else if(act==='select-player'){
     selectedPlayerId=id;
     document.querySelectorAll('.player-item').forEach(elm=>elm.classList.remove('selected'));
