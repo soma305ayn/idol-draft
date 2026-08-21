@@ -312,6 +312,9 @@ function normalizeState(s){
   s.round1.pendingTeamIds = s.round1.pendingTeamIds || [];
   s.round1.lotteryQueue = s.round1.lotteryQueue || [];
   if(s.round1.currentLottery===undefined) s.round1.currentLottery = null;
+  if(s.roundSummary===undefined) s.roundSummary = null;
+  if(s.roundSummary) s.roundSummary.acked = s.roundSummary.acked || {};
+  if(s.pendingAfterSummary===undefined) s.pendingAfterSummary = null;
   if(Array.isArray(s.teams)){
     s.teams.forEach(t=>{ if(t.claimedBy===undefined) t.claimedBy=null; });
   }
@@ -508,8 +511,12 @@ function finishRound1(){
   const claimed=state.teams.filter(t=>t.claimedBy).map(t=>t.id);
   const order=[...claimed];
   for(let i=order.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [order[i],order[j]]=[order[j],order[i]]; }
-  state.waiverOrder=order; state.round=2; state.turnIndex=0;
-  state.phase = state.settings.totalRounds>=2 ? 'snake_pick' : 'finished';
+  state.waiverOrder=order;
+  state.roundSummary={round:1, acked:{}};
+  state.pendingAfterSummary = state.settings.totalRounds>=2
+    ? {phase:'snake_pick', round:2, turnIndex:0}
+    : {phase:'finished'};
+  state.phase='round_summary';
 }
 let lotteryDrawing=false;
 async function drawLottery(){
@@ -594,11 +601,48 @@ async function submitSnakePick(){
     selectedPlayerId=null;
     state.turnIndex++;
     if(state.turnIndex>=state.waiverOrder.length){
-      state.turnIndex=0; state.round++;
-      if(state.round>state.settings.totalRounds) state.phase='finished';
+      const completedRound=state.round;
+      const nextRound=completedRound+1;
+      state.roundSummary={round:completedRound, acked:{}};
+      state.pendingAfterSummary = nextRound>state.settings.totalRounds
+        ? {phase:'finished'}
+        : {phase:'snake_pick', round:nextRound, turnIndex:0};
+      state.phase='round_summary';
     }
     await saveState(); render();
   }catch(e){ showToast('エラーが発生しました。もう一度お試しください。'); }
+}
+async function ackRoundSummary(){
+  if(!myId) return;
+  for(let attempt=0; attempt<4; attempt++){
+    try{
+      await refreshState();
+      if(stateLostGuard()) return;
+      if(state.phase!=='round_summary'){ render(); return; }
+      if(!state.roundSummary) { render(); return; }
+      state.roundSummary.acked = state.roundSummary.acked || {};
+      if(state.roundSummary.acked[myId.teamId]){ render(); return; }
+      state.roundSummary.acked[myId.teamId]=true;
+      const claimedIds = state.teams.filter(t=>t.claimedBy).map(t=>t.id);
+      const allAcked = claimedIds.length>0 && claimedIds.every(tid=>state.roundSummary.acked[tid]);
+      if(allAcked){
+        const pending = state.pendingAfterSummary || {phase:'finished'};
+        state.phase = pending.phase;
+        if(pending.phase==='snake_pick'){
+          state.round = pending.round;
+          state.turnIndex = pending.turnIndex || 0;
+        }
+        state.roundSummary = null;
+        state.pendingAfterSummary = null;
+      }
+      const ok = await saveState();
+      if(ok){ render(); return; }
+      // 競合(他の人と同時押し): 少し待って読み直し、自動でリトライ
+      await new Promise(r=>setTimeout(r, 250+Math.random()*250));
+    }catch(e){ showToast('エラーが発生しました。もう一度お試しください。'); return; }
+  }
+  showToast('混雑しています。もう一度「次へ」を押してください。');
+  render();
 }
 async function resetRoom(){
   if(!(await showConfirm('このドラフト全体をリセットします。よろしいですか？', 'リセットする'))) return;
@@ -910,8 +954,39 @@ function renderSnakePick(){
       <div class="sel-name">${selectedPlayerId?'選択中: '+esc(playerById(selectedPlayerId)?.name||''):'選手を選んでください'}</div>
       <button class="btn-primary" data-act="submit-sn" ${selectedPlayerId?'':'disabled'}>この選手を指名</button>
     </div>` : `
-    <h2>${esc(teamById(curTeamId).name)} が選考中...</h2>
+    <h2>${esc(teamDisplayName(teamById(curTeamId)))} が選考中...</h2>
     <p class="note">自分の番になったらこの画面から選手を指名できます。</p>`}
+  </div>
+  ${boardToggleHTML()}
+  </div>`;
+  app.innerHTML=html;
+}
+function renderRoundSummary(){
+  const rs=state.roundSummary || {round:1, acked:{}};
+  const round=rs.round;
+  const picks=(state.log||[]).filter(l=>l.round===round);
+  const claimedTeams=state.teams.filter(t=>t.claimedBy);
+  const ackedCount=claimedTeams.filter(t=>rs.acked && rs.acked[t.id]).length;
+  const total=claimedTeams.length;
+  const myAcked=!!(myId && rs.acked && rs.acked[myId.teamId]);
+  let html=`${statusBarHTML()}<div class="wrap">
+  <div class="card" style="text-align:center;">
+    <div class="eyebrow disp">ROUND ${round} RESULTS</div>
+    <h2 style="margin-top:8px;">${round}巡目 指名結果</h2>
+    <p class="note">感想会タイムです。全員が「次へ」を押すと、次の巡に進みます。</p>
+  </div>
+  <div class="card">
+    <h2>この巡の指名一覧</h2>
+    <div class="turn-order">${claimedTeams.map(t=>{
+      const pick=picks.find(l=>l.teamId===t.id);
+      const p=pick?playerById(pick.playerId):null;
+      return `<span class="turn-pill done">${esc(teamDisplayName(t))} → ${p?esc(p.name):'—'}${pick&&pick.method==='lottery'?' 🎯':''}</span>`;
+    }).join('')}</div>
+  </div>
+  <div class="card" style="text-align:center;">
+    ${myAcked
+      ? `<p class="sub">「次へ」を押しました。他の参加者を待っています…（${ackedCount}/${total}人）</p>`
+      : `<button class="btn-gold btn-block" data-act="ack-round-summary">次へ（${ackedCount}/${total}人 完了）</button>`}
   </div>
   ${boardToggleHTML()}
   </div>`;
@@ -919,7 +994,7 @@ function renderSnakePick(){
 }
 function renderFinished(){
   let html=`${statusBarHTML()}<div class="wrap">
-  <div class="card"><h2>ドラフト会議 終了</h2><p class="sub">お疲れ様でした！全${state.round-1}巡の指名が完了しました。</p></div>
+  <div class="card"><h2>ドラフト会議 終了</h2><p class="sub">お疲れ様でした！全${state.settings.totalRounds}巡の指名が完了しました。</p></div>
   <div class="card"><h2>最終ドラフトボード</h2>${boardHTML()}</div>
   <div class="foot-reset"><button class="btn-ghost foot-link" data-act="reset-room">新しいドラフトを始める</button></div>
   </div>`;
@@ -1008,6 +1083,7 @@ function render(){
   else if(state.phase==='round1_submit') renderRound1Submit();
   else if(state.phase==='lottery') renderLottery();
   else if(state.phase==='snake_pick') renderSnakePick();
+  else if(state.phase==='round_summary') renderRoundSummary();
   else if(state.phase==='finished') renderFinished();
   bindGroupToggles();
   appendDebugPanel();
@@ -1044,6 +1120,7 @@ app.addEventListener('click', (e)=>{
   else if(act==='submit-sn'){ submitSnakePick(); }
   else if(act==='toggle-board'){ showBoard=!showBoard; render(); }
   else if(act==='reset-room'){ resetRoom(); }
+  else if(act==='ack-round-summary'){ ackRoundSummary(); }
 });
 
 /* ---------- init ---------- */
