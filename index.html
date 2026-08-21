@@ -775,7 +775,7 @@ function boardHTML(){
   const teams=state.teams.filter(t=>t.claimedBy || state.log.some(l=>l.teamId===t.id));
   if(state.log.length===0) return `<p class="note">まだ指名結果がありません。</p>`;
   let html=`<div class="board-scroll"><table class="board-table"><thead><tr><th>巡</th>`;
-  teams.forEach(t=>html+=`<th>${esc(t.name)}</th>`);
+  teams.forEach(t=>html+=`<th>${esc(teamDisplayName(t))}</th>`);
   html+='</tr></thead><tbody>';
   const maxRound = Math.max(...rounds, state.round);
   for(let r=1;r<=maxRound;r++){
@@ -801,7 +801,7 @@ function statusBarHTML(){
   } else if(state.phase==='lottery'){ rlabel='1巡目'; plabel='競合抽選'; badge='<span class="badge turn">抽選</span>'; }
   else if(state.phase==='snake_pick'){
     rlabel=`${state.round}巡目`; const t=teamById(state.waiverOrder[state.turnIndex]);
-    plabel=`${t?t.name:''} の番です`; badge='<span class="badge go">進行中</span>';
+    plabel=`${t?teamDisplayName(t):''} の番です`; badge='<span class="badge go">進行中</span>';
   } else if(state.phase==='finished'){ rlabel='終了'; plabel='ドラフト会議 完了'; badge='<span class="badge go">FIN</span>'; }
   return `<div class="status-bar"><div><div class="r disp">${rlabel}</div><div class="p">部屋番号: ${esc(roomCode)}｜${plabel}</div></div>${badge}</div>`;
 }
@@ -1000,7 +1000,7 @@ function renderSnakePick(){
     <h2>指名順</h2>
     <div class="turn-order">${state.waiverOrder.map((tid,i)=>{
       const t=teamById(tid);
-      return `<span class="turn-pill ${i===state.turnIndex?'active':''}">${esc(t.name)}</span>`;
+      return `<span class="turn-pill ${i===state.turnIndex?'active':''}">${esc(teamDisplayName(t))}</span>`;
     }).join('')}</div>
   </div>
   <div class="card">
