@@ -151,8 +151,12 @@ button:disabled{opacity:0.4; cursor:not-allowed;}
   padding:18px 10px; border-radius:12px; background:var(--panel-3);
   border:2px solid var(--border); margin:10px 0 16px; min-height:38px;
 }
-.lottery-slot.winner{border-color:var(--gold); color:var(--gold-soft); box-shadow:0 0 22px rgba(227,179,65,0.35);}
+.lottery-slot.winner{border-color:var(--gold); color:var(--gold-soft); box-shadow:0 0 22px rgba(227,179,65,0.35); animation:winner-pop .4s ease;}
+@keyframes winner-pop{0%{transform:scale(0.92);} 60%{transform:scale(1.04);} 100%{transform:scale(1);}}
 .contenders{display:flex; flex-wrap:wrap; justify-content:center; gap:6px; margin-bottom:14px;}
+.lot-result{font-size:15px; line-height:1.7; margin-top:4px;}
+.lot-winner-team{font-family:'Oswald',sans-serif; font-size:24px; font-weight:700; color:var(--gold-soft);}
+.lot-winner-player{font-size:19px; font-weight:900; color:var(--text);}
 .board-table{width:100%; border-collapse:collapse; font-size:12.5px;}
 .board-table th,.board-table td{border:1px solid var(--border); padding:7px 8px; text-align:left; white-space:nowrap;}
 .board-table th{background:var(--panel-3); font-family:'Oswald',sans-serif; font-weight:600; color:var(--gold-soft); position:sticky; top:0;}
@@ -194,7 +198,7 @@ button:disabled{opacity:0.4; cursor:not-allowed;}
 <body>
 <div id="app"><div class="wrap"><p class="sub">読み込み中...</p></div></div>
 <script>
-const TEAM_COLORS=['#e3b341','#3e8963','#d9534f','#5a9bdc','#b06ae2','#e2903e','#3ec6c6','#c6a15b','#8c97ab','#e2609e','#6ae28c','#9b7be2'];
+const TEAM_COLORS=['#e3b341','#3e8963','#d9534f','#5a9bdc','#b06ae2','#e2903e','#3ec6c6','#c6a15b','#8c97ab','#e2609e','#6ae28c','#9b7be2','#d97ba0','#79a86a','#c98f4f','#5e8fd9','#a35ce0','#4fae94','#d96b6b','#8f9c4f'];
 const PRESET_PLAYERS=[
   ['森田ひかる','櫻坂46'],['大園玲','櫻坂46'],['松田里奈','櫻坂46'],['小池美波','櫻坂46'],
   ['田村保乃','櫻坂46'],['守屋麗奈','櫻坂46'],['藤吉夏鈴','櫻坂46'],['増本綺良','櫻坂46'],
@@ -308,43 +312,68 @@ function normalizeState(s){
   }
   return s;
 }
+let currentEtag=null;
 async function refreshState(){
-  if(!roomCode){ state=null; return; }
+  if(!roomCode){ state=null; currentEtag=null; return; }
   try{
-    const res=await fetch(roomUrl(), {headers:{'Accept':'application/json'}});
+    const res=await fetch(roomUrl(), {headers:{'Accept':'application/json','X-Firebase-ETag':'true'}});
     if(!res.ok) throw new Error(`HTTP ${res.status}`);
     const text=await res.text();
     state = (text && text!=='null') ? normalizeState(JSON.parse(text)) : null;
     lastStateStr = text;
+    currentEtag = res.headers.get('ETag');
     dbg.lastGet={ok:true, at:nowStr(), len:text?text.length:0, err:null};
   }catch(e){
     state=null;
     dbg.lastGet={ok:false, at:nowStr(), len:null, err:(e&&e.message)||String(e)};
   }
 }
+/* 保存前に読み込んだ時点(currentEtag)から他の端末が書き換えていた場合は
+   409/412で拒否されるようにし、競合時は保存せず最新状態を取り直す。
+   戻り値: 保存できたら true、競合・失敗で保存できなかったら false */
 async function saveState(){
   try{
     const body=JSON.stringify(state);
-    const res=await fetch(roomUrl(), {method:'PUT', headers:{'Content-Type':'application/json'}, body});
+    const headers={'Content-Type':'application/json','X-Firebase-ETag':'true'};
+    if(currentEtag) headers['if-match']=currentEtag;
+    const res=await fetch(roomUrl(), {method:'PUT', headers, body});
+    if(res.status===412){
+      dbg.lastSet={ok:false, at:nowStr(), len:null, err:'競合(412): 他の端末が先に更新しました'};
+      showToast('他の操作と競合したため保存を中断し、最新の状態を取得しました。もう一度お試しください。');
+      await refreshState();
+      render();
+      return false;
+    }
     if(!res.ok) throw new Error(`HTTP ${res.status}`);
     lastStateStr=body;
+    const newEtag=res.headers.get('ETag');
+    if(newEtag) currentEtag=newEtag;
     dbg.lastSet={ok:true, at:nowStr(), len:body.length, err:null};
+    return true;
   }catch(e){
     dbg.lastSet={ok:false, at:nowStr(), len:null, err:(e&&e.message)||String(e)};
     showToast('保存に失敗しました。通信状況を確認してもう一度お試しください。');
+    return false;
   }
 }
 async function pollLoop(){
   if(!roomCode) return;
   dbg.pollCount++;
   try{
-    const res=await fetch(roomUrl(), {headers:{'Accept':'application/json'}});
+    const res=await fetch(roomUrl(), {headers:{'Accept':'application/json','X-Firebase-ETag':'true'}});
     if(!res.ok) throw new Error(`HTTP ${res.status}`);
     const text=await res.text();
     const changed=(text!==lastStateStr);
     dbg.lastPoll={ok:true, at:nowStr(), changed, err:null};
-    if(changed){ lastStateStr=text; state=(text && text!=='null')?normalizeState(JSON.parse(text)):null; render(); }
-    else{ updateDebugPanelInPlace(); }
+    if(changed){
+      lastStateStr=text;
+      currentEtag=res.headers.get('ETag');
+      state=(text && text!=='null')?normalizeState(JSON.parse(text)):null;
+      render();
+    } else {
+      currentEtag=res.headers.get('ETag')||currentEtag;
+      updateDebugPanelInPlace();
+    }
   }catch(e){
     dbg.lastPoll={ok:false, at:nowStr(), changed:null, err:(e&&e.message)||String(e)};
     updateDebugPanelInPlace();
@@ -372,6 +401,7 @@ async function createRoom(teamCount, totalRounds){
     round1:{submissions:{}, pendingTeamIds:teams.map(t=>t.id), lotteryQueue:[], currentLottery:null},
     waiverOrder:[], turnIndex:0, log:[]
   };
+  currentEtag=null;
   await saveState();
   render();
 }
@@ -481,43 +511,60 @@ async function drawLottery(){
     const slot=document.getElementById('lot-slot');
     const drawBtn=document.getElementById('lot-draw-btn');
     if(drawBtn) drawBtn.disabled=true;
-    let ticks=0;
-    const timer=setInterval(()=>{
-      if(!slot){ clearInterval(timer); return; }
+    // 減速しながら長めに回転させる演出(合計 約3.6秒)
+    const intervals=[80,80,80,80,80,80,90,90,100,110,120,140,160,190,230,280,340,420,520,650];
+    let step=0;
+    function tick(){
+      if(!slot) return;
       const t=teamById(contendingTeamIds[Math.floor(Math.random()*contendingTeamIds.length)]);
       slot.textContent=t?t.name:'???';
-      ticks++;
-      if(ticks>14){
-        clearInterval(timer);
+      step++;
+      if(step<intervals.length){
+        setTimeout(tick, intervals[step]);
+      } else {
         finalizeLottery();
       }
-    },90);
+    }
+    tick();
   }catch(e){ lotteryDrawing=false; showToast('エラーが発生しました。もう一度お試しください。'); }
 }
 async function finalizeLottery(){
   try{
     await refreshState();
     if(stateLostGuard()){ lotteryDrawing=false; return; }
+    // 他の端末が既にこの抽選を処理済みの場合は何もしない(二重処理防止)
+    if(state.phase!=='lottery' || !state.round1.currentLottery){
+      lotteryDrawing=false; render(); return;
+    }
     const cur=state.round1.currentLottery;
     const winnerId=cur.contendingTeamIds[Math.floor(Math.random()*cur.contendingTeamIds.length)];
     assignPick(winnerId, cur.playerId, 1, 'lottery');
     cur.winnerTeamId=winnerId;
     state.round1.pendingTeamIds=state.round1.pendingTeamIds.filter(t=>t!==winnerId);
-    await saveState();
+    const saved=await saveState();
+    if(!saved){
+      // 競合: 他の端末が先に確定させていた。保存内部で最新状態に更新済みなので、それを表示するだけにする。
+      lotteryDrawing=false;
+      return;
+    }
     const slot=document.getElementById('lot-slot');
     if(slot){ slot.textContent=teamById(winnerId).name; slot.classList.add('winner'); }
+    render();
     setTimeout(async ()=>{
       try{
         lotteryDrawing=false;
         await refreshState();
         if(stateLostGuard()) return;
+        if(state.phase!=='lottery' || !state.round1.currentLottery || state.round1.currentLottery.playerId!==cur.playerId){
+          render(); return; // 既に他の端末が次に進めている
+        }
         state.round1.lotteryQueue.shift();
         if(state.round1.lotteryQueue.length>0){ state.round1.currentLottery=state.round1.lotteryQueue[0]; state.phase='lottery'; }
         else if(state.round1.pendingTeamIds.length>0){ state.phase='round1_submit'; state.round1.currentLottery=null; }
         else { finishRound1(); }
         await saveState(); render();
       }catch(e){ showToast('エラーが発生しました。画面を更新してください。'); }
-    }, 1300);
+    }, 4500);
     render();
   }catch(e){ lotteryDrawing=false; showToast('エラーが発生しました。もう一度お試しください。'); }
 }
@@ -545,7 +592,7 @@ async function resetRoom(){
   if(!(await showConfirm('このドラフト全体をリセットします。よろしいですか？', 'リセットする'))) return;
   try{ await fetch(roomUrl(), {method:'DELETE'}); }catch(e){}
   clearIdentityLocal();
-  roomCode=null; state=null; myId=null; lastStateStr=null;
+  roomCode=null; state=null; myId=null; lastStateStr=null; currentEtag=null;
   render();
 }
 async function enterRoom(codeRaw){
@@ -559,7 +606,7 @@ async function enterRoom(codeRaw){
 }
 function leaveRoom(){
   try{ localStorage.removeItem('idol_draft_last_room'); }catch(e){}
-  roomCode=null; state=null; myId=null; lastStateStr=null; selectedPlayerId=null; showBoard=false;
+  roomCode=null; state=null; myId=null; lastStateStr=null; currentEtag=null; selectedPlayerId=null; showBoard=false;
   render();
 }
 
@@ -674,7 +721,7 @@ function renderCreateRoom(){
     <div class="card">
       <h2>新しいドラフトを開始</h2>
       <label>参加チーム数</label>
-      <input type="number" id="in-teamcount" value="10" min="2" max="12">
+      <input type="number" id="in-teamcount" value="10" min="2" max="20">
       <label>全体の巡数（何巡まで行うか）</label>
       <input type="number" id="in-rounds" value="5" min="1" max="15">
       <button class="btn-primary btn-block" data-act="create-room">この設定でドラフトを作成する</button>
@@ -767,9 +814,22 @@ function renderRound1Submit(){
     }).join('')}</div>
     <button class="btn-gold btn-block" data-act="reveal-r1" ${done<total?'disabled':''}>${done<total?'全員の提出を待っています':'開封して結果発表'}</button>
   </div>
+  ${round1ProgressHTML()}
   ${boardToggleHTML()}
   </div>`;
   app.innerHTML=html;
+}
+function round1ProgressHTML(){
+  const picks=(state.log||[]).filter(l=>l.round===1);
+  if(picks.length===0) return '';
+  return `<div class="card">
+    <h2>ここまでの1巡目 指名結果</h2>
+    <div class="turn-order">${picks.map(l=>{
+      const t=teamById(l.teamId), p=playerById(l.playerId);
+      if(!t||!p) return '';
+      return `<span class="turn-pill done">${esc(t.name)} → ${esc(p.name)}${l.method==='lottery'?' 🎯抽選':''}</span>`;
+    }).join('')}</div>
+  </div>`;
 }
 function renderLottery(){
   const cur=state.round1.currentLottery;
@@ -778,11 +838,16 @@ function renderLottery(){
   <div class="lottery-stage">
     <div class="lot-label disp">競合指名・抽選</div>
     <div class="lot-player">${esc(player.name)}</div>
-    <div class="contenders">${cur.contendingTeamIds.map(tid=>`<span class="turn-pill">${esc(teamById(tid).name)}</span>`).join('')}</div>
+    <p class="note" style="margin-top:-6px;">この選手を指名した球団</p>
+    <div class="contenders">${cur.contendingTeamIds.map(tid=>`<span class="turn-pill ${cur.winnerTeamId&&cur.winnerTeamId!==tid?'done':''}">${esc(teamById(tid).name)}</span>`).join('')}</div>
     <div class="lottery-slot disp ${cur.winnerTeamId?'winner':''}" id="lot-slot">${cur.winnerTeamId?esc(teamById(cur.winnerTeamId).name):'?'}</div>
-    ${cur.winnerTeamId?`<p class="sub">${esc(teamById(cur.winnerTeamId).name)} が交渉権を獲得しました！</p>`:
+    ${cur.winnerTeamId?`<p class="lot-result">
+        <span class="lot-winner-team">${esc(teamById(cur.winnerTeamId).name)}</span><br>
+        <span class="lot-winner-player">${esc(player.name)}</span> の交渉権を獲得！
+      </p>`:
       `<button class="btn-gold" id="lot-draw-btn" data-act="draw-lottery">抽選を引く</button>`}
   </div>
+  ${round1ProgressHTML()}
   ${boardToggleHTML()}
   </div>`;
   app.innerHTML=html;
@@ -912,7 +977,7 @@ app.addEventListener('click', (e)=>{
   else if(act==='create-room'){
     const tc=parseInt(document.getElementById('in-teamcount').value,10)||10;
     const rd=parseInt(document.getElementById('in-rounds').value,10)||5;
-    createRoom(Math.max(2,Math.min(12,tc)), Math.max(1,Math.min(15,rd)));
+    createRoom(Math.max(2,Math.min(20,tc)), Math.max(1,Math.min(15,rd)));
   } else if(act==='claim-team'){
     const nick=document.getElementById('in-nick').value;
     claimTeam(id, nick);
