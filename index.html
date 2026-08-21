@@ -139,6 +139,14 @@ button:disabled{opacity:0.4; cursor:not-allowed;}
 }
 .turn-pill.active{background:var(--field); border-color:var(--field); color:#fff; font-weight:700;}
 .turn-pill.done{opacity:0.4; text-decoration:line-through;}
+.summary-list{display:flex; flex-direction:column; gap:8px; margin-top:8px;}
+.summary-row{
+  display:flex; align-items:center; justify-content:space-between; gap:10px;
+  padding:11px 14px; border-radius:10px; background:var(--panel-3); border:1px solid var(--border);
+}
+.summary-row .s-team{font-weight:700; font-size:14px; color:var(--text);}
+.summary-row .s-player{font-size:14.5px; font-weight:700; color:var(--gold-soft); text-align:right;}
+.summary-row .s-lottery{font-size:11px; color:var(--muted); margin-left:4px;}
 .lottery-stage{
   text-align:center; padding:26px 16px; border-radius:14px;
   background:radial-gradient(circle at 50% 20%, rgba(227,179,65,0.16), transparent 65%), var(--panel-2);
@@ -245,11 +253,67 @@ function sanitizeRoomCode(s){
 }
 function roomUrl(){ return `${FIREBASE_URL}/rooms/${encodeURIComponent(roomCode)}.json`; }
 function identityKey(){ return `idol_draft_identity:${roomCode}`; }
+function lockUrl(){ return `${FIREBASE_URL}/locks/${encodeURIComponent(roomCode)}.json`; }
+const LOCK_TIMEOUT_MS=15000;
+
+/* 排他ロック取得: if-none-match:'*' はレスポンスヘッダーの読み取りに依存せず、
+   ステータスコード(412=既にロックあり)だけで判定できるため確実に動作する */
+async function tryAcquireLock(token){
+  try{
+    const res=await fetch(lockUrl(), {
+      method:'PUT',
+      headers:{'Content-Type':'application/json','if-none-match':'*'},
+      body:JSON.stringify({token, ts:Date.now()})
+    });
+    if(res.ok) return true;
+    if(res.status===412){
+      // 既存ロックが古すぎる(操作中に落ちた等)場合は期限切れとみなして奪取
+      try{
+        const cur=await fetch(lockUrl());
+        const text=await cur.text();
+        const data=(text && text!=='null') ? JSON.parse(text) : null;
+        if(!data || (Date.now()-data.ts) > LOCK_TIMEOUT_MS){
+          const force=await fetch(lockUrl(), {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({token, ts:Date.now()})});
+          return force.ok;
+        }
+      }catch(e){}
+      return false;
+    }
+    return false;
+  }catch(e){ return false; }
+}
+async function releaseLock(){
+  try{ await fetch(lockUrl(), {method:'DELETE'}); }catch(e){}
+}
+/* 状態を書き換える操作は必ずこれで包み、同時操作による上書き事故を防ぐ */
+async function withRoomLock(fn){
+  const token=uid('lock');
+  let acquired=false, attempts=0;
+  for(let attempt=0; attempt<3 && !acquired; attempt++){
+    attempts=attempt+1;
+    acquired=await tryAcquireLock(token);
+    if(!acquired) await new Promise(r=>setTimeout(r, 300+Math.random()*300));
+  }
+  dbg.lastLock={ok:acquired, at:nowStr(), attempts};
+  if(!acquired){
+    showToast('他の操作と混み合っています。少し待ってからもう一度お試しください。');
+    await refreshState(); render();
+    return false;
+  }
+  try{
+    await fn();
+    return true;
+  } finally {
+    await releaseLock();
+  }
+}
+
 
 const dbg={
   lastGet:{ok:null, at:null, len:null, err:null},
   lastSet:{ok:null, at:null, len:null, err:null},
   lastPoll:{ok:null, at:null, changed:null, err:null},
+  lastLock:{ok:null, at:null, attempts:0},
   pollCount:0
 };
 function nowStr(){ return new Date().toLocaleTimeString('ja-JP'); }
@@ -426,7 +490,7 @@ function stateLostGuard(){
 }
 async function claimTeam(teamId, nickname, teamName){
   if(!nickname.trim()) return showToast('ニックネームを入力してください');
-  try{
+  await withRoomLock(async ()=>{
     await refreshState();
     if(stateLostGuard()) return;
     const team=teamById(teamId);
@@ -437,27 +501,26 @@ async function claimTeam(teamId, nickname, teamName){
     myId={nickname:nickname.trim(), teamId};
     saveIdentityLocal();
     await saveState(); render();
-  }catch(e){ showToast('エラーが発生しました。もう一度お試しください。'); }
+  });
 }
 async function releaseTeam(){
   if(!myId) return;
-  try{
+  await withRoomLock(async ()=>{
     await refreshState();
     if(stateLostGuard()) return;
     const team=teamById(myId.teamId);
     if(team && team.claimedBy===myId.nickname) team.claimedBy=null;
     myId=null; clearIdentityLocal();
     await saveState(); render();
-  }catch(e){ showToast('エラーが発生しました。もう一度お試しください。'); }
+  });
 }
 async function startDraft(){
-  try{
-    await refreshState();
-    if(stateLostGuard()) return;
-    if(state.phase!=='setup'){ showToast('すでに他の人がドラフトを開始しています。画面を更新します。'); render(); return; }
-    const unclaimed=state.teams.filter(t=>!t.claimedBy);
-    if(unclaimed.length>0 && !(await showConfirm(`${unclaimed.length}球団が未確定です。空席のまま始めますか？`, '始める'))) return;
-    // 確認ダイアログを待っている間に他の人が開始している可能性があるため再確認
+  await refreshState();
+  if(stateLostGuard()) return;
+  if(state.phase!=='setup'){ showToast('すでに他の人がドラフトを開始しています。画面を更新します。'); render(); return; }
+  const unclaimed=state.teams.filter(t=>!t.claimedBy);
+  if(unclaimed.length>0 && !(await showConfirm(`${unclaimed.length}球団が未確定です。空席のまま始めますか？`, '始める'))) return;
+  await withRoomLock(async ()=>{
     await refreshState();
     if(stateLostGuard()) return;
     if(state.phase!=='setup'){ showToast('すでに他の人がドラフトを開始しています。画面を更新します。'); render(); return; }
@@ -468,11 +531,11 @@ async function startDraft(){
     state.round1.pendingTeamIds=claimed.map(t=>t.id);
     state.round1.submissions={}; state.round1.lotteryQueue=[]; state.round1.currentLottery=null;
     await saveState(); render();
-  }catch(e){ showToast('エラーが発生しました。もう一度お試しください。'); }
+  });
 }
 async function submitRound1(){
   if(!selectedPlayerId) return showToast('選手を選択してください');
-  try{
+  await withRoomLock(async ()=>{
     await refreshState();
     if(stateLostGuard()) return;
     if(state.phase!=='round1_submit'){ showToast('状況が変わりました。画面を更新します。'); render(); return; }
@@ -483,12 +546,13 @@ async function submitRound1(){
     state.round1.submissions[myId.teamId]=selectedPlayerId;
     selectedPlayerId=null;
     await saveState(); render();
-  }catch(e){ showToast('エラーが発生しました。もう一度お試しください。'); }
+  });
 }
 async function revealRound1(){
-  try{
+  await withRoomLock(async ()=>{
     await refreshState();
     if(stateLostGuard()) return;
+    if(state.phase!=='round1_submit'){ showToast('状況が変わりました。画面を更新します。'); render(); return; }
     const pend=state.round1.pendingTeamIds, subs=state.round1.submissions;
     if(pend.some(t=>!subs[t])){ showToast('まだ全球団の提出が揃っていません'); render(); return; }
     const groups={};
@@ -505,7 +569,7 @@ async function revealRound1(){
     if(queue.length>0){ state.round1.lotteryQueue=queue; state.round1.currentLottery=queue[0]; state.phase='lottery'; }
     else if(stillPending.length===0){ finishRound1(); }
     await saveState(); render();
-  }catch(e){ showToast('エラーが発生しました。もう一度お試しください。'); }
+  });
 }
 function finishRound1(){
   const claimed=state.teams.filter(t=>t.claimedBy).map(t=>t.id);
@@ -548,33 +612,35 @@ async function drawLottery(){
   }catch(e){ lotteryDrawing=false; showToast('エラーが発生しました。もう一度お試しください。'); }
 }
 async function finalizeLottery(){
+  let winnerId=null, cur=null, decided=false;
   try{
-    await refreshState();
-    if(stateLostGuard()){ lotteryDrawing=false; return; }
-    // 他の端末が既にこの抽選を処理済みの場合は何もしない(二重処理防止)
-    if(state.phase!=='lottery' || !state.round1.currentLottery){
-      lotteryDrawing=false; render(); return;
-    }
-    const cur=state.round1.currentLottery;
-    const winnerId=cur.contendingTeamIds[Math.floor(Math.random()*cur.contendingTeamIds.length)];
-    assignPick(winnerId, cur.playerId, 1, 'lottery');
-    cur.winnerTeamId=winnerId;
-    state.round1.pendingTeamIds=state.round1.pendingTeamIds.filter(t=>t!==winnerId);
-    const saved=await saveState();
-    if(!saved){
-      // 競合: 他の端末が先に確定させていた。保存内部で最新状態に更新済みなので、それを表示するだけにする。
-      lotteryDrawing=false;
-      return;
-    }
-    const slot=document.getElementById('lot-slot');
-    if(slot){ slot.textContent=teamDisplayName(teamById(winnerId)); slot.classList.add('winner'); }
-    render();
-    setTimeout(async ()=>{
-      try{
-        lotteryDrawing=false;
+    await withRoomLock(async ()=>{
+      await refreshState();
+      if(stateLostGuard()){ return; }
+      if(state.phase!=='lottery' || !state.round1.currentLottery){
+        render(); return;
+      }
+      cur=state.round1.currentLottery;
+      winnerId=cur.contendingTeamIds[Math.floor(Math.random()*cur.contendingTeamIds.length)];
+      assignPick(winnerId, cur.playerId, 1, 'lottery');
+      cur.winnerTeamId=winnerId;
+      state.round1.pendingTeamIds=state.round1.pendingTeamIds.filter(t=>t!==winnerId);
+      const saved=await saveState();
+      if(saved) decided=true;
+    });
+  }catch(e){ showToast('エラーが発生しました。もう一度お試しください。'); }
+  lotteryDrawing=false;
+  if(!decided){ render(); return; }
+  const slot=document.getElementById('lot-slot');
+  if(slot){ slot.textContent=teamDisplayName(teamById(winnerId)); slot.classList.add('winner'); }
+  render();
+  const playerIdForCheck=cur.playerId;
+  setTimeout(async ()=>{
+    try{
+      await withRoomLock(async ()=>{
         await refreshState();
         if(stateLostGuard()) return;
-        if(state.phase!=='lottery' || !state.round1.currentLottery || state.round1.currentLottery.playerId!==cur.playerId){
+        if(state.phase!=='lottery' || !state.round1.currentLottery || state.round1.currentLottery.playerId!==playerIdForCheck){
           render(); return; // 既に他の端末が次に進めている
         }
         state.round1.lotteryQueue.shift();
@@ -582,14 +648,13 @@ async function finalizeLottery(){
         else if(state.round1.pendingTeamIds.length>0){ state.phase='round1_submit'; state.round1.currentLottery=null; }
         else { finishRound1(); }
         await saveState(); render();
-      }catch(e){ showToast('エラーが発生しました。画面を更新してください。'); }
-    }, 4500);
-    render();
-  }catch(e){ lotteryDrawing=false; showToast('エラーが発生しました。もう一度お試しください。'); }
+      });
+    }catch(e){ showToast('エラーが発生しました。画面を更新してください。'); }
+  }, 4500);
 }
 async function submitSnakePick(){
   if(!selectedPlayerId) return showToast('選手を選択してください');
-  try{
+  await withRoomLock(async ()=>{
     await refreshState();
     if(stateLostGuard()) return;
     if(state.phase!=='snake_pick') { showToast('状況が変わりました。画面を更新します。'); render(); return; }
@@ -610,39 +675,32 @@ async function submitSnakePick(){
       state.phase='round_summary';
     }
     await saveState(); render();
-  }catch(e){ showToast('エラーが発生しました。もう一度お試しください。'); }
+  });
 }
 async function ackRoundSummary(){
   if(!myId) return;
-  for(let attempt=0; attempt<4; attempt++){
-    try{
-      await refreshState();
-      if(stateLostGuard()) return;
-      if(state.phase!=='round_summary'){ render(); return; }
-      if(!state.roundSummary) { render(); return; }
-      state.roundSummary.acked = state.roundSummary.acked || {};
-      if(state.roundSummary.acked[myId.teamId]){ render(); return; }
-      state.roundSummary.acked[myId.teamId]=true;
-      const claimedIds = state.teams.filter(t=>t.claimedBy).map(t=>t.id);
-      const allAcked = claimedIds.length>0 && claimedIds.every(tid=>state.roundSummary.acked[tid]);
-      if(allAcked){
-        const pending = state.pendingAfterSummary || {phase:'finished'};
-        state.phase = pending.phase;
-        if(pending.phase==='snake_pick'){
-          state.round = pending.round;
-          state.turnIndex = pending.turnIndex || 0;
-        }
-        state.roundSummary = null;
-        state.pendingAfterSummary = null;
+  await withRoomLock(async ()=>{
+    await refreshState();
+    if(stateLostGuard()) return;
+    if(state.phase!=='round_summary'){ render(); return; }
+    if(!state.roundSummary) { render(); return; }
+    state.roundSummary.acked = state.roundSummary.acked || {};
+    if(state.roundSummary.acked[myId.teamId]){ render(); return; }
+    state.roundSummary.acked[myId.teamId]=true;
+    const claimedIds = state.teams.filter(t=>t.claimedBy).map(t=>t.id);
+    const allAcked = claimedIds.length>0 && claimedIds.every(tid=>state.roundSummary.acked[tid]);
+    if(allAcked){
+      const pending = state.pendingAfterSummary || {phase:'finished'};
+      state.phase = pending.phase;
+      if(pending.phase==='snake_pick'){
+        state.round = pending.round;
+        state.turnIndex = pending.turnIndex || 0;
       }
-      const ok = await saveState();
-      if(ok){ render(); return; }
-      // 競合(他の人と同時押し): 少し待って読み直し、自動でリトライ
-      await new Promise(r=>setTimeout(r, 250+Math.random()*250));
-    }catch(e){ showToast('エラーが発生しました。もう一度お試しください。'); return; }
-  }
-  showToast('混雑しています。もう一度「次へ」を押してください。');
-  render();
+      state.roundSummary = null;
+      state.pendingAfterSummary = null;
+    }
+    await saveState(); render();
+  });
 }
 async function resetRoom(){
   if(!(await showConfirm('このドラフト全体をリセットします。よろしいですか？', 'リセットする'))) return;
@@ -977,10 +1035,13 @@ function renderRoundSummary(){
   </div>
   <div class="card">
     <h2>この巡の指名一覧</h2>
-    <div class="turn-order">${claimedTeams.map(t=>{
+    <div class="summary-list">${claimedTeams.map(t=>{
       const pick=picks.find(l=>l.teamId===t.id);
       const p=pick?playerById(pick.playerId):null;
-      return `<span class="turn-pill done">${esc(teamDisplayName(t))} → ${p?esc(p.name):'—'}${pick&&pick.method==='lottery'?' 🎯':''}</span>`;
+      return `<div class="summary-row">
+        <span class="s-team">${esc(teamDisplayName(t))}</span>
+        <span class="s-player">${p?esc(p.name):'—'}${pick&&pick.method==='lottery'?'<span class="s-lottery">🎯抽選</span>':''}</span>
+      </div>`;
     }).join('')}</div>
   </div>
   <div class="card" style="text-align:center;">
@@ -1029,7 +1090,7 @@ function filterPlayers(listId, q){
 /* ---------- master render ---------- */
 let dbgPanelOpen=false;
 function debugPanelHTML(){
-  const g=dbg.lastGet, s=dbg.lastSet, p=dbg.lastPoll;
+  const g=dbg.lastGet, s=dbg.lastSet, p=dbg.lastPoll, l=dbg.lastLock;
   const everSaved = s.ok===true;
   const getLine = g.ok===null ? '未実行'
     : g.ok ? `成功 (${g.at} / ${g.len}文字)`
@@ -1044,6 +1105,7 @@ function debugPanelHTML(){
       この端末でこの部屋を作成/保存したことがあるか: <b style="color:var(--text)">${everSaved?'はい':'いいえ'}</b><br>
       読み込み(get): ${getLine}<br>
       保存(set): ${s.ok===null?'未実行':(s.ok?`成功 (${s.at} / ${s.len}文字)`:`失敗 (${s.at}) — ${esc(s.err||'')}`)}<br>
+      排他ロック取得: ${l.ok===null?'未実行':(l.ok?`成功 (${l.at} / 試行${l.attempts}回)`:`失敗 (${l.at} / 試行${l.attempts}回) — 混雑中`)}<br>
       自動更新ポーリング: ${p.ok===null?'未実行':(p.ok?`OK (${p.at} / 変化:${p.changed?'あり':'なし'})`:`失敗 (${p.at}) — ${esc(p.err||'')}`)}　実行回数:${dbg.pollCount}
     </div>
   </details></div>`;
