@@ -529,7 +529,7 @@ async function drawLottery(){
     function tick(){
       if(!slot) return;
       const t=teamById(contendingTeamIds[Math.floor(Math.random()*contendingTeamIds.length)]);
-      slot.textContent=t?t.name:'???';
+      slot.textContent=t?teamDisplayName(t):'???';
       step++;
       if(step<intervals.length){
         setTimeout(tick, intervals[step]);
@@ -560,7 +560,7 @@ async function finalizeLottery(){
       return;
     }
     const slot=document.getElementById('lot-slot');
-    if(slot){ slot.textContent=teamById(winnerId).name; slot.classList.add('winner'); }
+    if(slot){ slot.textContent=teamDisplayName(teamById(winnerId)); slot.classList.add('winner'); }
     render();
     setTimeout(async ()=>{
       try{
@@ -802,7 +802,16 @@ function renderSetupScreen(){
   </div>`;
   app.innerHTML=html;
 }
+function teamDisplayName(t){
+  if(!t) return '';
+  return t.claimedBy || t.name;
+}
 function renderRound1Submit(){
+  const amPending = state.round1.pendingTeamIds.includes(myId.teamId);
+  const myPick = (state.log||[]).find(l=>l.round===1 && l.teamId===myId.teamId);
+  if(!amPending && myPick){
+    return renderRound1DecidedScreen(myPick);
+  }
   const submitted=!!state.round1.submissions[myId.teamId];
   const done=Object.keys(state.round1.submissions).length, total=state.round1.pendingTeamIds.length;
   let html=`${statusBarHTML()}<div class="wrap">
@@ -818,12 +827,30 @@ function renderRound1Submit(){
     </div>`}
   </div>
   <div class="card">
-    <h2>提出状況</h2>
+    <h2>提出状況（再抽選対象の球団のみ）</h2>
     <div class="turn-order">${state.round1.pendingTeamIds.map(tid=>{
       const t=teamById(tid); const ok=!!state.round1.submissions[tid];
-      return `<span class="turn-pill ${ok?'done':''}">${esc(t.name)}${ok?' ✓':''}</span>`;
+      return `<span class="turn-pill ${ok?'done':''}">${esc(teamDisplayName(t))}${ok?' ✓':''}</span>`;
     }).join('')}</div>
     <button class="btn-gold btn-block" data-act="reveal-r1" ${done<total?'disabled':''}>${done<total?'全員の提出を待っています':'開封して結果発表'}</button>
+  </div>
+  ${round1ProgressHTML()}
+  ${boardToggleHTML()}
+  </div>`;
+  app.innerHTML=html;
+}
+function renderRound1DecidedScreen(myPick){
+  const p=playerById(myPick.playerId);
+  const waitingCount=state.round1.pendingTeamIds.length;
+  let html=`${statusBarHTML()}<div class="wrap">
+  <div class="card" style="border-color:var(--field-light); text-align:center;">
+    <div style="font-size:12px; letter-spacing:.15em; color:var(--field-light); font-family:'Oswald',sans-serif; text-transform:uppercase;">DECIDED</div>
+    <h2 style="margin-top:8px;">✅ あなたの1巡目指名は確定しています</h2>
+    <div style="font-size:22px; font-weight:900; margin:10px 0 4px;">${esc(p?p.name:'?')}</div>
+    ${myPick.method==='lottery'?'<p class="note">抽選の結果、獲得しました 🎯</p>':'<p class="note">単独指名で獲得しました</p>'}
+  </div>
+  <div class="card">
+    <p class="sub">他に${waitingCount}球団が、選手の重複による再抽選・再指名の対応中です。しばらくお待ちください。画面は自動で更新されます。</p>
   </div>
   ${round1ProgressHTML()}
   ${boardToggleHTML()}
@@ -838,7 +865,7 @@ function round1ProgressHTML(){
     <div class="turn-order">${picks.map(l=>{
       const t=teamById(l.teamId), p=playerById(l.playerId);
       if(!t||!p) return '';
-      return `<span class="turn-pill done">${esc(t.name)} → ${esc(p.name)}${l.method==='lottery'?' 🎯抽選':''}</span>`;
+      return `<span class="turn-pill done">${esc(teamDisplayName(t))} → ${esc(p.name)}${l.method==='lottery'?' 🎯抽選':''}</span>`;
     }).join('')}</div>
   </div>`;
 }
@@ -849,11 +876,11 @@ function renderLottery(){
   <div class="lottery-stage">
     <div class="lot-label disp">競合指名・抽選</div>
     <div class="lot-player">${esc(player.name)}</div>
-    <p class="note" style="margin-top:-6px;">この選手を指名した球団</p>
-    <div class="contenders">${cur.contendingTeamIds.map(tid=>`<span class="turn-pill ${cur.winnerTeamId&&cur.winnerTeamId!==tid?'done':''}">${esc(teamById(tid).name)}</span>`).join('')}</div>
-    <div class="lottery-slot disp ${cur.winnerTeamId?'winner':''}" id="lot-slot">${cur.winnerTeamId?esc(teamById(cur.winnerTeamId).name):'?'}</div>
+    <p class="note" style="margin-top:-6px;">この選手を指名した参加者</p>
+    <div class="contenders">${cur.contendingTeamIds.map(tid=>{const t=teamById(tid); return `<span class="turn-pill ${cur.winnerTeamId&&cur.winnerTeamId!==tid?'done':''}">${esc(teamDisplayName(t))}</span>`;}).join('')}</div>
+    <div class="lottery-slot disp ${cur.winnerTeamId?'winner':''}" id="lot-slot">${cur.winnerTeamId?esc(teamDisplayName(teamById(cur.winnerTeamId))):'?'}</div>
     ${cur.winnerTeamId?`<p class="lot-result">
-        <span class="lot-winner-team">${esc(teamById(cur.winnerTeamId).name)}</span><br>
+        <span class="lot-winner-team">${esc(teamDisplayName(teamById(cur.winnerTeamId)))}</span><br>
         <span class="lot-winner-player">${esc(player.name)}</span> の交渉権を獲得！
       </p>`:
       `<button class="btn-gold" id="lot-draw-btn" data-act="draw-lottery">抽選を引く</button>`}
