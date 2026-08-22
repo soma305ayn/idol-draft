@@ -493,7 +493,10 @@ async function pollLoop(){
 }
 
 function assignPick(teamId, playerId, round, method){
+  // 安全策: 同じ球団が同じ巡に既に指名済み、またはこの選手が既に別球団に割り当て済みなら二重登録しない
+  if(state.log.some(l=>l.round===round && l.teamId===teamId)) return;
   const player=state.players.find(p=>p.id===playerId);
+  if(!player || player.status==='taken') return;
   player.status='taken'; player.ownerTeamId=teamId; player.round=round;
   state.log.push({round, teamId, playerId, method, ts:Date.now()});
 }
@@ -656,6 +659,10 @@ async function finalizeLottery(expectedPlayerId){
       // 自分がアニメーションを見ていた抽選と、現在サーバー上で進行中の抽選が一致するか必ず確認する。
       // ズレている場合(他の端末が既に進めている場合)は絶対に確定処理をしない。
       if(state.round1.currentLottery.playerId!==expectedPlayerId){
+        mismatched=true; render(); return;
+      }
+      // 結果表示の待機中(演出の数秒間)に、既に別の端末が当選者を決定済みの場合も二重処理しない
+      if(state.round1.currentLottery.winnerTeamId){
         mismatched=true; render(); return;
       }
       cur=state.round1.currentLottery;
