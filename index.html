@@ -371,6 +371,7 @@ function normalizeState(s){
   s.players = s.players || [];
   s.log = s.log || [];
   s.waiverOrder = s.waiverOrder || [];
+  s.currentRoundOrder = s.currentRoundOrder || [];
   s.round1 = s.round1 || {};
   s.round1.submissions = s.round1.submissions || {};
   s.round1.pendingTeamIds = s.round1.pendingTeamIds || [];
@@ -380,7 +381,10 @@ function normalizeState(s){
   if(s.roundSummary) s.roundSummary.acked = s.roundSummary.acked || {};
   if(s.pendingAfterSummary===undefined) s.pendingAfterSummary = null;
   if(Array.isArray(s.teams)){
-    s.teams.forEach(t=>{ if(t.claimedBy===undefined) t.claimedBy=null; });
+    s.teams.forEach(t=>{
+      if(t.claimedBy===undefined) t.claimedBy=null;
+      if(t.retiredFromRound===undefined) t.retiredFromRound=null;
+    });
   }
   if(Array.isArray(s.players)){
     s.players.forEach(p=>{
@@ -572,10 +576,9 @@ async function revealRound1(){
   });
 }
 function finishRound1(){
+  // 基準順(ウェーバー順)は球団番号順(1球団目→順に)。2巡目=基準順、3巡目=逆順、4巡目=基準順…と交互に使う
   const claimed=state.teams.filter(t=>t.claimedBy).map(t=>t.id);
-  const order=[...claimed];
-  for(let i=order.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [order[i],order[j]]=[order[j],order[i]]; }
-  state.waiverOrder=order;
+  state.waiverOrder=claimed;
   state.roundSummary={round:1, acked:{}};
   state.pendingAfterSummary = state.settings.totalRounds>=2
     ? {phase:'snake_pick', round:2, turnIndex:0}
@@ -658,22 +661,44 @@ async function submitSnakePick(){
     await refreshState();
     if(stateLostGuard()) return;
     if(state.phase!=='snake_pick') { showToast('状況が変わりました。画面を更新します。'); render(); return; }
-    const curTeam=state.waiverOrder[state.turnIndex];
+    const order=state.currentRoundOrder;
+    const curTeam=order[state.turnIndex];
     if(!myId||myId.teamId!==curTeam){ showToast('あなたの番ではありません'); render(); return; }
     const p=playerById(selectedPlayerId);
     if(!p||p.status!=='available'){ showToast('その選手は選択できません'); selectedPlayerId=null; render(); return; }
     assignPick(curTeam, selectedPlayerId, state.round, 'normal');
     selectedPlayerId=null;
     state.turnIndex++;
-    if(state.turnIndex>=state.waiverOrder.length){
+    if(state.turnIndex>=order.length){
       const completedRound=state.round;
       const nextRound=completedRound+1;
       state.roundSummary={round:completedRound, acked:{}};
       state.pendingAfterSummary = nextRound>state.settings.totalRounds
         ? {phase:'finished'}
-        : {phase:'snake_pick', round:nextRound, turnIndex:0};
+        : {phase:'snake_pick', round:nextRound};
       state.phase='round_summary';
     }
+    await saveState(); render();
+  });
+}
+async function retireTeam(){
+  if(!myId) return;
+  const myTeamNow=teamById(myId.teamId);
+  if(myTeamNow && myTeamNow.retiredFromRound!=null) return showToast('すでに指名終了を選択しています');
+  if(!(await showConfirm('今後の指名をすべて終了しますか？次の巡以降、あなたの球団の指名はスキップされます（この操作は取り消せません）。', '指名を終了する'))) return;
+  await withRoomLock(async ()=>{
+    await refreshState();
+    if(stateLostGuard()) return;
+    const t=teamById(myId.teamId);
+    if(!t) return;
+    if(t.retiredFromRound!=null){ showToast('すでに指名終了を選択しています'); render(); return; }
+    let effectiveRound;
+    if(state.phase==='round_summary' && state.pendingAfterSummary && state.pendingAfterSummary.phase==='snake_pick'){
+      effectiveRound = state.pendingAfterSummary.round;
+    } else {
+      effectiveRound = (state.round||1) + 1;
+    }
+    t.retiredFromRound = effectiveRound;
     await saveState(); render();
   });
 }
@@ -691,10 +716,18 @@ async function ackRoundSummary(){
     const allAcked = claimedIds.length>0 && claimedIds.every(tid=>state.roundSummary.acked[tid]);
     if(allAcked){
       const pending = state.pendingAfterSummary || {phase:'finished'};
-      state.phase = pending.phase;
       if(pending.phase==='snake_pick'){
-        state.round = pending.round;
-        state.turnIndex = pending.turnIndex || 0;
+        const next=resolveNextActiveRound(pending.round);
+        if(next){
+          state.phase='snake_pick';
+          state.round=next.round;
+          state.turnIndex=0;
+          state.currentRoundOrder=next.order;
+        } else {
+          state.phase='finished';
+        }
+      } else {
+        state.phase='finished';
       }
       state.roundSummary = null;
       state.pendingAfterSummary = null;
@@ -785,6 +818,8 @@ function boardHTML(){
       if(pick){
         const p=playerById(pick.playerId);
         html+=`<td>${esc(p?p.name:'?')}${pick.method==='lottery'?' 🎯':''}</td>`;
+      } else if(t.retiredFromRound!=null && r>=t.retiredFromRound){
+        html+=`<td class="empty-cell">🏳️終了</td>`;
       } else html+=`<td class="empty-cell">—</td>`;
     });
     html+='</tr>';
@@ -800,7 +835,7 @@ function statusBarHTML(){
     plabel=`指名提出 ${done}/${total}`; badge='<span class="badge wait">入力中</span>';
   } else if(state.phase==='lottery'){ rlabel='1巡目'; plabel='競合抽選'; badge='<span class="badge turn">抽選</span>'; }
   else if(state.phase==='snake_pick'){
-    rlabel=`${state.round}巡目`; const t=teamById(state.waiverOrder[state.turnIndex]);
+    rlabel=`${state.round}巡目`; const t=teamById((state.currentRoundOrder||[])[state.turnIndex]);
     plabel=`${t?teamDisplayName(t):''} の番です`; badge='<span class="badge go">進行中</span>';
   } else if(state.phase==='finished'){ rlabel='終了'; plabel='ドラフト会議 完了'; badge='<span class="badge go">FIN</span>'; }
   return `<div class="status-bar"><div><div class="r disp">${rlabel}</div><div class="p">部屋番号: ${esc(roomCode)}｜${plabel}</div></div>${badge}</div>`;
@@ -908,6 +943,28 @@ function teamDisplayName(t){
   if(!t) return '';
   return t.claimedBy || t.name;
 }
+/* 2巡目=ウェーバー順(基準順)、3巡目=逆ウェーバー順、4巡目=ウェーバー順…と巡ごとに交互に切り替える */
+function orderForRound(round){
+  const base=state.waiverOrder||[];
+  return (round%2===0) ? base : [...base].reverse();
+}
+/* その巡の時点で「指名終了」していない球団だけを残した、実際に使う指名順を計算 */
+function computeRoundOrder(round){
+  return orderForRound(round).filter(tid=>{
+    const t=teamById(tid);
+    return !(t && t.retiredFromRound!=null && round>=t.retiredFromRound);
+  });
+}
+/* round以降で、実際に指名者が1人以上いる最初の巡を探す。全員指名終了していたらnull(ドラフト終了) */
+function resolveNextActiveRound(round){
+  let r=round;
+  while(r<=state.settings.totalRounds){
+    const order=computeRoundOrder(r);
+    if(order.length>0) return {round:r, order};
+    r++;
+  }
+  return null;
+}
 function renderRound1Submit(){
   const amPending = state.round1.pendingTeamIds.includes(myId.teamId);
   const myPick = (state.log||[]).find(l=>l.round===1 && l.teamId===myId.teamId);
@@ -993,15 +1050,20 @@ function renderLottery(){
   app.innerHTML=html;
 }
 function renderSnakePick(){
-  const curTeamId=state.waiverOrder[state.turnIndex];
+  const order=state.currentRoundOrder;
+  const curTeamId=order[state.turnIndex];
   const myTurn=myId.teamId===curTeamId;
+  const isReversed=state.round%2!==0;
+  const myTeamData=myTeam();
+  const alreadyRetired=myTeamData && myTeamData.retiredFromRound!=null;
   let html=`${statusBarHTML()}<div class="wrap">
   <div class="card">
-    <h2>指名順</h2>
-    <div class="turn-order">${state.waiverOrder.map((tid,i)=>{
+    <h2>指名順（${state.round}巡目・${isReversed?'逆ウェーバー順':'ウェーバー順'}）</h2>
+    <div class="turn-order">${order.map((tid,i)=>{
       const t=teamById(tid);
       return `<span class="turn-pill ${i===state.turnIndex?'active':''}">${esc(teamDisplayName(t))}</span>`;
     }).join('')}</div>
+    ${retiredTeamsNoteHTML()}
   </div>
   <div class="card">
     ${myTurn?`
@@ -1015,9 +1077,20 @@ function renderSnakePick(){
     <h2>${esc(teamDisplayName(teamById(curTeamId)))} が選考中...</h2>
     <p class="note">自分の番になったらこの画面から選手を指名できます。</p>`}
   </div>
+  <div class="card">
+    ${alreadyRetired
+      ? `<p class="note">あなたの球団は${myTeamData.retiredFromRound}巡目から指名を終了しています。</p>`
+      : `<button class="btn-ghost btn-block" data-act="retire-team">今後の指名をすべて終了する</button>
+         <p class="note" style="margin-top:6px;">押すと、次の巡以降あなたの球団の指名がスキップされます（取り消し不可）。</p>`}
+  </div>
   ${boardToggleHTML()}
   </div>`;
   app.innerHTML=html;
+}
+function retiredTeamsNoteHTML(){
+  const retired=state.teams.filter(t=>t.claimedBy && t.retiredFromRound!=null && t.retiredFromRound<=state.round);
+  if(retired.length===0) return '';
+  return `<p class="note" style="margin-top:8px;">🏳️ 指名終了済み: ${retired.map(t=>esc(teamDisplayName(t))).join('、')}</p>`;
 }
 function renderRoundSummary(){
   const rs=state.roundSummary || {round:1, acked:{}};
@@ -1038,9 +1111,10 @@ function renderRoundSummary(){
     <div class="summary-list">${claimedTeams.map(t=>{
       const pick=picks.find(l=>l.teamId===t.id);
       const p=pick?playerById(pick.playerId):null;
+      const isRetiredNow = t.retiredFromRound!=null && round>=t.retiredFromRound;
       return `<div class="summary-row">
         <span class="s-team">${esc(teamDisplayName(t))}</span>
-        <span class="s-player">${p?esc(p.name):'—'}${pick&&pick.method==='lottery'?'<span class="s-lottery">🎯抽選</span>':''}</span>
+        <span class="s-player">${p?esc(p.name):(isRetiredNow?'🏳️指名終了':'—')}${pick&&pick.method==='lottery'?'<span class="s-lottery">🎯抽選</span>':''}</span>
       </div>`;
     }).join('')}</div>
   </div>
@@ -1049,6 +1123,11 @@ function renderRoundSummary(){
       ? `<p class="sub">「次へ」を押しました。他の参加者を待っています…（${ackedCount}/${total}人）</p>`
       : `<button class="btn-gold btn-block" data-act="ack-round-summary">次へ（${ackedCount}/${total}人 完了）</button>`}
   </div>
+  ${(myId && myTeam() && myTeam().retiredFromRound==null) ? `
+  <div class="card">
+    <button class="btn-ghost btn-block" data-act="retire-team">今後の指名をすべて終了する</button>
+    <p class="note" style="margin-top:6px;">押すと、次の巡以降あなたの球団の指名がスキップされます（取り消し不可）。</p>
+  </div>` : ''}
   ${boardToggleHTML()}
   </div>`;
   app.innerHTML=html;
@@ -1183,6 +1262,7 @@ app.addEventListener('click', (e)=>{
   else if(act==='toggle-board'){ showBoard=!showBoard; render(); }
   else if(act==='reset-room'){ resetRoom(); }
   else if(act==='ack-round-summary'){ ackRoundSummary(); }
+  else if(act==='retire-team'){ retireTeam(); }
 });
 
 /* ---------- init ---------- */
