@@ -220,7 +220,7 @@ button:disabled{opacity:0.4; cursor:not-allowed;}
 <script>
 const TEAM_COLORS=['#e3b341','#3e8963','#d9534f','#5a9bdc','#b06ae2','#e2903e','#3ec6c6','#c6a15b','#8c97ab','#e2609e','#6ae28c','#9b7be2','#d97ba0','#79a86a','#c98f4f','#5e8fd9','#a35ce0','#4fae94','#d96b6b','#8f9c4f'];
 const PRESET_PLAYERS=[
-  ['森田ひかる','櫻坂46'],['大園玲','櫻坂46'],['松田里奈','櫻坂46'],['小池美波','櫻坂46'],
+  ['森田ひかる','櫻坂46'],['大園玲','櫻坂46'],['松田里奈','櫻坂46'],
   ['田村保乃','櫻坂46'],['守屋麗奈','櫻坂46'],['藤吉夏鈴','櫻坂46'],['増本綺良','櫻坂46'],
   ['石森璃花','櫻坂46'],['大沼晶保','櫻坂46'],['遠藤光莉','櫻坂46'],['幸阪茉里乃','櫻坂46'],
   ['山﨑天','櫻坂46'],['中嶋優月','櫻坂46'],['遠藤理子','櫻坂46'],['小田倉麗奈','櫻坂46'],
@@ -803,6 +803,123 @@ function bindGroupToggles(){
     el.addEventListener('toggle', ()=>{ openGroups[el.dataset.gkey]=el.open; });
   });
 }
+function truncateCanvasText(ctx, text, maxWidth){
+  if(ctx.measureText(text).width<=maxWidth) return text;
+  let t=text;
+  while(t.length>1 && ctx.measureText(t+'…').width>maxWidth){ t=t.slice(0,-1); }
+  return t+'…';
+}
+function downloadBoardImage(){
+  try{
+    const teams=state.teams.filter(t=>t.claimedBy || state.log.some(l=>l.teamId===t.id));
+    const rounds=state.log.length ? Math.max(...state.log.map(l=>l.round)) : 0;
+    if(teams.length===0 || rounds===0){ showToast('保存できる指名結果がありません'); return; }
+
+    const leftW=56, cellW=150, cellH=44, headerH=54, titleH=64, pad=24, footH=34;
+    const scale=2;
+    const width=pad*2+leftW+cellW*teams.length;
+    const height=pad*2+titleH+headerH+cellH*rounds+footH;
+
+    const canvas=document.createElement('canvas');
+    canvas.width=width*scale;
+    canvas.height=height*scale;
+    const ctx=canvas.getContext('2d');
+    ctx.scale(scale,scale);
+    ctx.textBaseline='middle';
+
+    // 背景
+    ctx.fillStyle='#0b1220';
+    ctx.fillRect(0,0,width,height);
+
+    // タイトル
+    ctx.fillStyle='#f0cd6e';
+    ctx.font='bold 24px "Oswald","Noto Sans JP",sans-serif';
+    ctx.textAlign='left';
+    ctx.fillText('ドラフト会議 結果', pad, pad+titleH/2-6);
+    ctx.fillStyle='#8c97ab';
+    ctx.font='12px "Noto Sans JP",sans-serif';
+    ctx.fillText(`部屋番号: ${roomCode}　全${state.settings.totalRounds}巡`, pad, pad+titleH/2+18);
+
+    const gridX=pad+leftW, gridY=pad+titleH;
+
+    // ヘッダー行(球団名)
+    teams.forEach((t,i)=>{
+      const cx=gridX+i*cellW;
+      ctx.fillStyle='#1d2a4a';
+      ctx.fillRect(cx, gridY, cellW, headerH);
+      ctx.fillStyle='#f0cd6e';
+      ctx.font='bold 13px "Noto Sans JP",sans-serif';
+      ctx.textAlign='center';
+      ctx.fillText(truncateCanvasText(ctx, teamDisplayName(t), cellW-16), cx+cellW/2, gridY+headerH/2);
+    });
+    ctx.fillStyle='#1d2a4a';
+    ctx.fillRect(pad, gridY, leftW, headerH);
+    ctx.fillStyle='#f0cd6e';
+    ctx.font='bold 12px "Oswald",sans-serif';
+    ctx.textAlign='center';
+    ctx.fillText('巡', pad+leftW/2, gridY+headerH/2);
+
+    // 各巡の行
+    for(let r=1;r<=rounds;r++){
+      const ry=gridY+headerH+(r-1)*cellH;
+      const rowBg = r%2===0 ? '#121b2e' : '#182240';
+      ctx.fillStyle=rowBg;
+      ctx.fillRect(pad, ry, leftW, cellH);
+      ctx.fillStyle='#8c97ab';
+      ctx.font='bold 13px "Oswald",sans-serif';
+      ctx.textAlign='center';
+      ctx.fillText(String(r), pad+leftW/2, ry+cellH/2);
+
+      teams.forEach((t,i)=>{
+        const cx=gridX+i*cellW;
+        ctx.fillStyle=rowBg;
+        ctx.fillRect(cx, ry, cellW, cellH);
+        const pick=state.log.find(l=>l.round===r && l.teamId===t.id);
+        let text='—', color='#5a6478';
+        if(pick){
+          const p=playerById(pick.playerId);
+          text=(p?p.name:'?')+(pick.method==='lottery'?' 🎯':'');
+          color='#f3f5f0';
+        } else if(t.retiredFromRound!=null && r>=t.retiredFromRound){
+          text='指名終了'; color='#5a6478';
+        }
+        ctx.fillStyle=color;
+        ctx.font='13px "Noto Sans JP",sans-serif';
+        ctx.textAlign='center';
+        ctx.fillText(truncateCanvasText(ctx, text, cellW-16), cx+cellW/2, ry+cellH/2);
+      });
+    }
+
+    // グリッド線
+    ctx.strokeStyle='rgba(255,255,255,0.12)';
+    ctx.lineWidth=1;
+    for(let i=0;i<=teams.length;i++){
+      const gx=gridX+i*cellW;
+      ctx.beginPath(); ctx.moveTo(gx, gridY); ctx.lineTo(gx, gridY+headerH+cellH*rounds); ctx.stroke();
+    }
+    for(let r=0;r<=rounds;r++){
+      const gy=gridY+headerH+r*cellH;
+      ctx.beginPath(); ctx.moveTo(pad, gy); ctx.lineTo(gridX+cellW*teams.length, gy); ctx.stroke();
+    }
+    ctx.strokeRect(pad, gridY, leftW+cellW*teams.length, headerH+cellH*rounds);
+
+    // フッター
+    ctx.fillStyle='#5a6478';
+    ctx.font='11px "Noto Sans JP",sans-serif';
+    ctx.textAlign='left';
+    ctx.fillText('Idol Draft Conference Simulator', pad, height-pad-footH/2+10);
+
+    const url=canvas.toDataURL('image/png');
+    const a=document.createElement('a');
+    a.href=url;
+    a.download=`draft_board_${roomCode}.png`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }catch(e){
+    showToast('画像の保存に失敗しました。');
+  }
+}
 function boardHTML(){
   const rounds=[...new Set(state.log.map(l=>l.round))].sort((a,b)=>a-b);
   const teams=state.teams.filter(t=>t.claimedBy || state.log.some(l=>l.teamId===t.id));
@@ -1053,12 +1170,11 @@ function renderSnakePick(){
   const order=state.currentRoundOrder;
   const curTeamId=order[state.turnIndex];
   const myTurn=myId.teamId===curTeamId;
-  const isReversed=state.round%2!==0;
   const myTeamData=myTeam();
   const alreadyRetired=myTeamData && myTeamData.retiredFromRound!=null;
   let html=`${statusBarHTML()}<div class="wrap">
   <div class="card">
-    <h2>指名順（${state.round}巡目・${isReversed?'逆ウェーバー順':'ウェーバー順'}）</h2>
+    <h2>指名順（${state.round}巡目）</h2>
     <div class="turn-order">${order.map((tid,i)=>{
       const t=teamById(tid);
       return `<span class="turn-pill ${i===state.turnIndex?'active':''}">${esc(teamDisplayName(t))}</span>`;
@@ -1135,7 +1251,9 @@ function renderRoundSummary(){
 function renderFinished(){
   let html=`${statusBarHTML()}<div class="wrap">
   <div class="card"><h2>ドラフト会議 終了</h2><p class="sub">お疲れ様でした！全${state.settings.totalRounds}巡の指名が完了しました。</p></div>
-  <div class="card"><h2>最終ドラフトボード</h2>${boardHTML()}</div>
+  <div class="card"><h2>最終ドラフトボード</h2>${boardHTML()}
+    <button class="btn-gold btn-block" data-act="download-board" style="margin-top:12px;">画像として保存</button>
+  </div>
   <div class="foot-reset"><button class="btn-ghost foot-link" data-act="reset-room">新しいドラフトを始める</button></div>
   </div>`;
   app.innerHTML=html;
@@ -1263,6 +1381,7 @@ app.addEventListener('click', (e)=>{
   else if(act==='reset-room'){ resetRoom(); }
   else if(act==='ack-round-summary'){ ackRoundSummary(); }
   else if(act==='retire-team'){ retireTeam(); }
+  else if(act==='download-board'){ downloadBoardImage(); }
 });
 
 /* ---------- init ---------- */
