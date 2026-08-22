@@ -790,6 +790,7 @@ function leaveRoom(){
 function myTeam(){ return myId ? teamById(myId.teamId) : null; }
 function amClaimedHere(){ if(!myId||!state) return false; const t=teamById(myId.teamId); return !!(t && t.claimedBy===myId.nickname); }
 
+const GROUP_ORDER=['乃木坂46','櫻坂46','日向坂46','=LOVE','≠ME','≒JOY','僕が見たかった青空','WHITE SCORPION','Rain Tree'];
 function groupByAffiliation(players){
   const groups={};
   const order=[];
@@ -798,7 +799,15 @@ function groupByAffiliation(players){
     if(!groups[key]){ groups[key]=[]; order.push(key); }
     groups[key].push(p);
   });
-  order.sort((a,b)=> a==='その他' ? 1 : b==='その他' ? -1 : a.localeCompare(b,'ja'));
+  order.sort((a,b)=>{
+    if(a==='その他') return 1;
+    if(b==='その他') return -1;
+    const ia=GROUP_ORDER.indexOf(a), ib=GROUP_ORDER.indexOf(b);
+    if(ia!==-1 && ib!==-1) return ia-ib;
+    if(ia!==-1) return -1;
+    if(ib!==-1) return 1;
+    return a.localeCompare(b,'ja');
+  });
   return order.map(k=>({affiliation:k, players:groups[k]}));
 }
 let openGroups={};
