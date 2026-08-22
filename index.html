@@ -910,15 +910,25 @@ function downloadBoardImage(){
     ctx.fillText('Idol Draft Conference Simulator', pad, height-pad-footH/2+10);
 
     const url=canvas.toDataURL('image/png');
-    const a=document.createElement('a');
-    a.href=url;
-    a.download=`draft_board_${roomCode}.png`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
+    showBoardImageModal(url);
   }catch(e){
-    showToast('画像の保存に失敗しました。');
+    showToast('画像の生成に失敗しました。');
   }
+}
+function showBoardImageModal(dataUrl){
+  const overlay=document.createElement('div');
+  overlay.className='modal-overlay';
+  overlay.innerHTML=`<div class="modal-box" style="max-width:94vw; width:auto; max-height:88vh; overflow-y:auto;">
+    <p style="margin-bottom:10px;">画像を<b>長押し</b>して「画像を保存」を選ぶと端末に保存できます。</p>
+    <img src="${dataUrl}" style="width:100%; display:block; border-radius:8px; margin-bottom:14px;">
+    <div class="row">
+      <button class="btn-ghost" id="__img-close">閉じる</button>
+      <a class="btn-primary" id="__img-dl" href="${dataUrl}" download="draft_board_${esc(roomCode)}.png" style="flex:1; text-decoration:none; text-align:center; display:flex; align-items:center; justify-content:center;">ダウンロード</a>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector('#__img-close').addEventListener('click', ()=>overlay.remove());
+  overlay.addEventListener('click',(e)=>{ if(e.target===overlay) overlay.remove(); });
 }
 function boardHTML(){
   const rounds=[...new Set(state.log.map(l=>l.round))].sort((a,b)=>a-b);
