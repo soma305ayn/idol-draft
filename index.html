@@ -1080,7 +1080,7 @@ function renderSnakePick(){
   <div class="card">
     ${alreadyRetired
       ? `<p class="note">あなたの球団は${myTeamData.retiredFromRound}巡目から指名を終了しています。</p>`
-      : `<button class="btn-ghost btn-block" data-act="retire-team">今後の指名をすべて終了する</button>
+      : `<button class="btn-ghost btn-block" data-act="retire-team">指名終了</button>
          <p class="note" style="margin-top:6px;">押すと、次の巡以降あなたの球団の指名がスキップされます（取り消し不可）。</p>`}
   </div>
   ${boardToggleHTML()}
@@ -1125,7 +1125,7 @@ function renderRoundSummary(){
   </div>
   ${(myId && myTeam() && myTeam().retiredFromRound==null) ? `
   <div class="card">
-    <button class="btn-ghost btn-block" data-act="retire-team">今後の指名をすべて終了する</button>
+    <button class="btn-ghost btn-block" data-act="retire-team">指名終了</button>
     <p class="note" style="margin-top:6px;">押すと、次の巡以降あなたの球団の指名がスキップされます（取り消し不可）。</p>
   </div>` : ''}
   ${boardToggleHTML()}
