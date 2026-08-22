@@ -771,18 +771,19 @@ async function resetRoom(){
   roomCode=null; state=null; myId=null; lastStateStr=null; currentEtag=null;
   render();
 }
-async function enterRoom(codeRaw){
+let isSpectator=false;
+async function enterRoom(codeRaw, spectate){
   const code=sanitizeRoomCode(codeRaw);
   if(!code) return showToast('部屋番号を入力してください');
   roomCode=code;
-  saveLastRoom(code);
-  myId=loadIdentity();
+  isSpectator=!!spectate;
+  if(!isSpectator){ saveLastRoom(code); myId=loadIdentity(); }
   await refreshState();
   render();
 }
 function leaveRoom(){
   try{ localStorage.removeItem('idol_draft_last_room'); }catch(e){}
-  roomCode=null; state=null; myId=null; lastStateStr=null; currentEtag=null; selectedPlayerId=null; showBoard=false;
+  roomCode=null; state=null; myId=null; lastStateStr=null; currentEtag=null; selectedPlayerId=null; showBoard=false; isSpectator=false;
   render();
 }
 
@@ -1021,6 +1022,7 @@ function renderRoomGate(){
       <label>部屋番号</label>
       <input type="text" id="in-roomcode" value="${esc(loadLastRoom())}" placeholder="例：sakura2026">
       <button class="btn-primary btn-block" data-act="enter-room">この番号で入室する</button>
+      <button class="btn-ghost btn-block" data-act="enter-room-spectator" style="margin-top:8px;">この番号を観戦する（参加せず見るだけ）</button>
     </div>
   </div>`;
 }
@@ -1067,6 +1069,7 @@ function renderJoinScreen(){
     html+=`<div class="card"><h2>ドラフトはすでに進行中です</h2><p class="note">担当球団を選ぶと途中から参加できます。</p></div>`;
   }
   html+=`</div>`;
+  html+=`<div class="card"><span class="toggle-link" data-act="switch-to-spectator">参加せずに観戦だけする ▸</span></div>`;
   app.innerHTML=html;
 }
 function playerPoolListHTML(){
@@ -1256,6 +1259,74 @@ function retiredTeamsNoteHTML(){
   if(retired.length===0) return '';
   return `<p class="note" style="margin-top:8px;">🏳️ 指名終了済み: ${retired.map(t=>esc(teamDisplayName(t))).join('、')}</p>`;
 }
+function renderSpectatorView(){
+  let phaseInfo='';
+  if(state.phase==='setup'){
+    const claimedCount=state.teams.filter(t=>t.claimedBy).length;
+    phaseInfo=`<div class="card"><h2>準備中</h2>
+      <p class="sub">${claimedCount}/${state.teams.length}球団が参加登録済み。選手プール${state.players.length}人。まもなく開始予定です。</p>
+      <div class="turn-order">${state.teams.map(t=>`<span class="turn-pill ${t.claimedBy?'':'done'}">${esc(t.claimedBy?teamDisplayName(t):t.name+'（空席）')}</span>`).join('')}</div>
+    </div>`;
+  } else if(state.phase==='round1_submit'){
+    const done=Object.keys(state.round1.submissions).length, total=state.round1.pendingTeamIds.length;
+    phaseInfo=`<div class="card"><h2>1巡目 指名提出中</h2>
+      <p class="sub">${done}/${total}球団が提出済み（内容は開封まで非公開です）</p>
+      <div class="turn-order">${state.round1.pendingTeamIds.map(tid=>{
+        const t=teamById(tid); const ok=!!state.round1.submissions[tid];
+        return `<span class="turn-pill ${ok?'done':''}">${esc(teamDisplayName(t))}${ok?' ✓':''}</span>`;
+      }).join('')}</div>
+    </div>${round1ProgressHTML()}`;
+  } else if(state.phase==='lottery'){
+    const cur=state.round1.currentLottery;
+    const player=playerById(cur.playerId);
+    phaseInfo=`<div class="lottery-stage">
+      <div class="lot-label disp">競合指名・抽選</div>
+      <div class="lot-player">${esc(player.name)}</div>
+      <p class="note" style="margin-top:-6px;">この選手を指名した参加者</p>
+      <div class="contenders">${cur.contendingTeamIds.map(tid=>{const t=teamById(tid); return `<span class="turn-pill ${cur.winnerTeamId&&cur.winnerTeamId!==tid?'done':''}">${esc(teamDisplayName(t))}</span>`;}).join('')}</div>
+      <div class="lottery-slot disp ${cur.winnerTeamId?'winner':''}">${cur.winnerTeamId?esc(teamDisplayName(teamById(cur.winnerTeamId))):'抽選待ち…'}</div>
+      ${cur.winnerTeamId?`<p class="lot-result"><span class="lot-winner-team">${esc(teamDisplayName(teamById(cur.winnerTeamId)))}</span><br><span class="lot-winner-player">${esc(player.name)}</span> の交渉権を獲得！</p>`:''}
+    </div>${round1ProgressHTML()}`;
+  } else if(state.phase==='snake_pick'){
+    const order=state.currentRoundOrder;
+    const curTeamId=order[state.turnIndex];
+    phaseInfo=`<div class="card"><h2>指名順（${state.round}巡目）</h2>
+      <div class="turn-order">${order.map((tid,i)=>{
+        const t=teamById(tid);
+        return `<span class="turn-pill ${i===state.turnIndex?'active':''}">${esc(teamDisplayName(t))}</span>`;
+      }).join('')}</div>
+      ${retiredTeamsNoteHTML()}
+      <p class="sub" style="margin-top:10px;">現在: <b>${esc(teamDisplayName(teamById(curTeamId)))}</b> が選考中…</p>
+    </div>`;
+  } else if(state.phase==='round_summary'){
+    const rs=state.roundSummary || {round:1, acked:{}};
+    const round=rs.round;
+    const picks=(state.log||[]).filter(l=>l.round===round);
+    const claimedTeams=state.teams.filter(t=>t.claimedBy);
+    const ackedCount=claimedTeams.filter(t=>rs.acked && rs.acked[t.id]).length;
+    phaseInfo=`<div class="card"><h2>${round}巡目 結果発表・感想会タイム</h2>
+      <p class="sub">全員が「次へ」を押すのを待っています（${ackedCount}/${claimedTeams.length}人）</p>
+      <div class="summary-list">${claimedTeams.map(t=>{
+        const pick=picks.find(l=>l.teamId===t.id); const p=pick?playerById(pick.playerId):null;
+        return `<div class="summary-row"><span class="s-team">${esc(teamDisplayName(t))}</span><span class="s-player">${p?esc(p.name):'—'}${pick&&pick.method==='lottery'?'<span class="s-lottery">🎯抽選</span>':''}</span></div>`;
+      }).join('')}</div>
+    </div>`;
+  } else if(state.phase==='finished'){
+    phaseInfo=`<div class="card"><h2>ドラフト会議 終了</h2><p class="sub">お疲れ様でした！全${state.settings.totalRounds}巡の指名が完了しました。</p></div>`;
+  }
+  let html=`${statusBarHTML()}<div class="wrap">
+  <div class="card" style="text-align:center; border-color:var(--field-light);">
+    <div class="eyebrow disp" style="color:var(--field-light);">SPECTATOR MODE</div>
+    <h2 style="margin-top:6px;">👀 閲覧者として観戦中</h2>
+  </div>
+  ${phaseInfo}
+  <div class="card"><h2>ドラフトボード</h2>${boardHTML()}
+    <button class="btn-gold btn-block" data-act="download-board" style="margin-top:12px;">画像として保存</button>
+  </div>
+  <div class="foot-reset"><button class="btn-ghost foot-link" data-act="leave-room">観戦をやめる</button></div>
+  </div>`;
+  app.innerHTML=html;
+}
 function renderRoundSummary(){
   const rs=state.roundSummary || {round:1, acked:{}};
   const round=rs.round;
@@ -1385,6 +1456,7 @@ function appendEscapeFooter(){
 function render(){
   if(!roomCode){ renderRoomGate(); }
   else if(!state){ renderCreateRoom(); }
+  else if(isSpectator){ renderSpectatorView(); }
   else if(!amClaimedHere()){ renderJoinScreen(); }
   else if(state.phase==='setup') renderSetupScreen();
   else if(state.phase==='round1_submit') renderRound1Submit();
@@ -1404,7 +1476,12 @@ app.addEventListener('click', (e)=>{
   const act=el.dataset.act, id=el.dataset.id;
   if(act==='enter-room'){
     const code=document.getElementById('in-roomcode').value;
-    enterRoom(code);
+    enterRoom(code, false);
+  } else if(act==='enter-room-spectator'){
+    const code=document.getElementById('in-roomcode').value;
+    enterRoom(code, true);
+  } else if(act==='switch-to-spectator'){
+    isSpectator=true; render();
   } else if(act==='leave-room'){ leaveRoom(); }
   else if(act==='create-room'){
     const tc=parseInt(document.getElementById('in-teamcount').value,10)||10;
