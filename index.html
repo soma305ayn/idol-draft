@@ -219,6 +219,27 @@ button:disabled{opacity:0.4; cursor:not-allowed;}
 }
 .modal-box p{font-size:14.5px; line-height:1.6; margin:0 0 16px;}
 .modal-box .row button{flex:1;}
+
+/* ===== PC / タブレット幅対応 ===== */
+@media (min-width:768px){
+  #app{max-width:1000px;}
+  .wrap{padding:22px 28px 10px;}
+  .status-bar{padding:14px 28px;}
+  .player-list{max-height:62vh;}
+  .player-group[open]{display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr));}
+  .player-group[open]>.group-header{grid-column:1/-1;}
+  .player-group[open]>.player-item{border-right:1px solid var(--border);}
+  .board-scroll{max-height:70vh;}
+  .board-table{font-size:13.5px;}
+  .lottery-stage{padding:34px 28px;}
+  .lottery-stage .lot-player{font-size:28px;}
+}
+@media (min-width:1200px){
+  #app{max-width:1240px;}
+  .wrap{padding:26px 40px 12px;}
+  .status-bar{padding:16px 40px;}
+  .player-group[open]{grid-template-columns:repeat(auto-fill,minmax(250px,1fr));}
+}
 </style>
 </head>
 <body>
