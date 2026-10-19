@@ -228,13 +228,14 @@ const TEAM_COLORS=['#e3b341','#3e8963','#d9534f','#5a9bdc','#b06ae2','#e2903e','
 let PRESET_PLAYERS=[];
 let PHOTO_MAP={};
 const GROUP_PH_COLORS={'乃木坂46':'#7b4fa0','櫻坂46':'#d9779a','日向坂46':'#5a9bdc','=LOVE':'#e2609e','≠ME':'#3ec6c6','≒JOY':'#e2903e','僕が見たかった青空':'#4fae94','WHITE SCORPION':'#8c97ab','Rain Tree':'#79a86a'};
-function photoHTML(name, size, extraCls){
+function photoHTML(name, size, extraCls, playerId){
   const pl=state&&state.players?state.players.find(x=>x.name===name):null;
   const bg=GROUP_PH_COLORS[pl?pl.pos:'']||'#4a5568';
   const url=PHOTO_MAP[name];
   const ini=esc(String(name||'?').charAt(0));
   const img=url?`<img src="${esc(url)}" alt="" loading="lazy" referrerpolicy="no-referrer" data-ini="${ini}">`:ini;
-  return `<span class="ph ph-${size} ${extraCls||''}" style="--ph-bg:${bg}">${img}</span>`;
+  const act=(url&&playerId)?` data-act="show-photo" data-id="${esc(playerId)}" style="--ph-bg:${bg}; cursor:zoom-in;"`:` style="--ph-bg:${bg}"`;
+  return `<span class="ph ph-${size} ${extraCls||''}"${act}>${img}</span>`;
 }
 document.addEventListener('error',e=>{ const t=e.target; if(t&&t.tagName==='IMG'&&t.dataset&&t.dataset.ini!==undefined){ t.replaceWith(document.createTextNode(t.dataset.ini)); } },true);
 let presetPlayersLoadError=false;
@@ -848,7 +849,7 @@ function playerListHTML(idPrefix, selectable){
       <summary class="group-header">${esc(g.affiliation)} <span class="group-count">(${g.players.length})</span></summary>`;
     g.players.forEach(p=>{
       html+=`<div class="player-item ${selectedPlayerId===p.id?'selected':''}" data-act="select-player" data-id="${p.id}">
-        ${photoHTML(p.name,'sm')}
+        ${photoHTML(p.name,'sm','',p.id)}
         <div><div class="pname">${esc(p.name)}</div>${p.pos?`<div class="ppos">${esc(p.pos)}</div>`:''}</div>
       </div>`;
     });
@@ -977,6 +978,25 @@ function downloadBoardImage(){
   }catch(e){
     showToast('画像の生成に失敗しました。');
   }
+}
+function showPlayerPhotoModal(playerId){
+  const p=playerById(playerId);
+  const url=p?PHOTO_MAP[p.name]:null;
+  if(!p||!url) return;
+  document.querySelectorAll('.__photo-modal').forEach(o=>o.remove());
+  const overlay=document.createElement('div');
+  overlay.className='modal-overlay __photo-modal';
+  overlay.innerHTML=`<div class="modal-box" style="text-align:center; max-width:340px;">
+    <img src="${esc(url)}" alt="" referrerpolicy="no-referrer" style="width:100%; max-height:60vh; object-fit:contain; display:block; border-radius:10px; margin-bottom:12px; background:#0003;">
+    <div style="font-size:21px; font-weight:900;">${esc(p.name)}</div>
+    <div class="note" style="margin:2px 0 14px;">${esc(p.pos||'')}</div>
+    <div class="row"><button class="btn-primary" id="__ph-close">閉じる</button></div>
+  </div>`;
+  document.body.appendChild(overlay);
+  const img=overlay.querySelector('img');
+  img.addEventListener('error',()=>overlay.remove());
+  overlay.querySelector('#__ph-close').addEventListener('click',()=>overlay.remove());
+  overlay.addEventListener('click',(e)=>{ if(e.target===overlay) overlay.remove(); });
 }
 function showBoardImageModal(dataUrl){
   const overlay=document.createElement('div');
@@ -1110,7 +1130,7 @@ function playerPoolListHTML(){
       <summary class="group-header">${esc(g.affiliation)} <span class="group-count">(${g.players.length})</span></summary>`;
     g.players.forEach(p=>{
       html+=`<div class="player-item ${p.status==='taken'?'taken':''}">
-        ${photoHTML(p.name,'sm')}
+        ${photoHTML(p.name,'sm','',p.id)}
         <div><div class="pname">${esc(p.name)}</div>${p.pos?`<div class="ppos">${esc(p.pos)}</div>`:''}</div>
         ${p.status==='taken'?`<div class="picked-tag">${esc(teamById(p.ownerTeamId)?.name||'')}が指名</div>`:''}
       </div>`;
@@ -1523,6 +1543,7 @@ app.addEventListener('click', (e)=>{
     claimTeam(id, nick);
   } else if(act==='release-team'){ showConfirm('担当を解除しますか？','解除する').then(ok=>{ if(ok) releaseTeam(); }); }
   else if(act==='start-draft'){ startDraft(); }
+  else if(act==='show-photo'){ showPlayerPhotoModal(id); }
   else if(act==='select-player'){
     selectedPlayerId=id;
     document.querySelectorAll('.player-item').forEach(elm=>elm.classList.remove('selected'));
