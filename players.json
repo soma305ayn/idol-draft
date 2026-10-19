@@ -1,0 +1,686 @@
+[
+  {
+    "name": "遠藤光莉",
+    "group": "櫻坂46"
+  },
+  {
+    "name": "大園玲",
+    "group": "櫻坂46"
+  },
+  {
+    "name": "大沼晶保",
+    "group": "櫻坂46"
+  },
+  {
+    "name": "幸阪茉里乃",
+    "group": "櫻坂46"
+  },
+  {
+    "name": "田村保乃",
+    "group": "櫻坂46"
+  },
+  {
+    "name": "藤吉夏鈴",
+    "group": "櫻坂46"
+  },
+  {
+    "name": "増本綺良",
+    "group": "櫻坂46"
+  },
+  {
+    "name": "松田里奈",
+    "group": "櫻坂46"
+  },
+  {
+    "name": "森田ひかる",
+    "group": "櫻坂46"
+  },
+  {
+    "name": "守屋麗奈",
+    "group": "櫻坂46"
+  },
+  {
+    "name": "山﨑天",
+    "group": "櫻坂46"
+  },
+  {
+    "name": "石森璃花",
+    "group": "櫻坂46"
+  },
+  {
+    "name": "遠藤理子",
+    "group": "櫻坂46"
+  },
+  {
+    "name": "小田倉麗奈",
+    "group": "櫻坂46"
+  },
+  {
+    "name": "小島凪紗",
+    "group": "櫻坂46"
+  },
+  {
+    "name": "谷口愛季",
+    "group": "櫻坂46"
+  },
+  {
+    "name": "中嶋優月",
+    "group": "櫻坂46"
+  },
+  {
+    "name": "的野美青",
+    "group": "櫻坂46"
+  },
+  {
+    "name": "向井純葉",
+    "group": "櫻坂46"
+  },
+  {
+    "name": "村井優",
+    "group": "櫻坂46"
+  },
+  {
+    "name": "村山美羽",
+    "group": "櫻坂46"
+  },
+  {
+    "name": "山下瞳月",
+    "group": "櫻坂46"
+  },
+  {
+    "name": "浅井恋乃未",
+    "group": "櫻坂46"
+  },
+  {
+    "name": "稲熊ひな",
+    "group": "櫻坂46"
+  },
+  {
+    "name": "勝又春",
+    "group": "櫻坂46"
+  },
+  {
+    "name": "佐藤愛桜",
+    "group": "櫻坂46"
+  },
+  {
+    "name": "中川智尋",
+    "group": "櫻坂46"
+  },
+  {
+    "name": "松本和子",
+    "group": "櫻坂46"
+  },
+  {
+    "name": "目黒陽色",
+    "group": "櫻坂46"
+  },
+  {
+    "name": "山川宇衣",
+    "group": "櫻坂46"
+  },
+  {
+    "name": "山田桃実",
+    "group": "櫻坂46"
+  },
+  {
+    "name": "伊藤理々杏",
+    "group": "乃木坂46"
+  },
+  {
+    "name": "岩本蓮加",
+    "group": "乃木坂46"
+  },
+  {
+    "name": "遠藤さくら",
+    "group": "乃木坂46"
+  },
+  {
+    "name": "賀喜遥香",
+    "group": "乃木坂46"
+  },
+  {
+    "name": "金川紗耶",
+    "group": "乃木坂46"
+  },
+  {
+    "name": "黒見明香",
+    "group": "乃木坂46"
+  },
+  {
+    "name": "柴田柚菜",
+    "group": "乃木坂46"
+  },
+  {
+    "name": "田村真佑",
+    "group": "乃木坂46"
+  },
+  {
+    "name": "筒井あやめ",
+    "group": "乃木坂46"
+  },
+  {
+    "name": "林瑠奈",
+    "group": "乃木坂46"
+  },
+  {
+    "name": "弓木奈於",
+    "group": "乃木坂46"
+  },
+  {
+    "name": "五百城茉央",
+    "group": "乃木坂46"
+  },
+  {
+    "name": "池田瑛紗",
+    "group": "乃木坂46"
+  },
+  {
+    "name": "一ノ瀬美空",
+    "group": "乃木坂46"
+  },
+  {
+    "name": "井上和",
+    "group": "乃木坂46"
+  },
+  {
+    "name": "岡本姫奈",
+    "group": "乃木坂46"
+  },
+  {
+    "name": "小川彩",
+    "group": "乃木坂46"
+  },
+  {
+    "name": "奥田いろは",
+    "group": "乃木坂46"
+  },
+  {
+    "name": "川﨑桜",
+    "group": "乃木坂46"
+  },
+  {
+    "name": "菅原咲月",
+    "group": "乃木坂46"
+  },
+  {
+    "name": "冨里奈央",
+    "group": "乃木坂46"
+  },
+  {
+    "name": "中西アルノ",
+    "group": "乃木坂46"
+  },
+  {
+    "name": "愛宕心響",
+    "group": "乃木坂46"
+  },
+  {
+    "name": "大越ひなの",
+    "group": "乃木坂46"
+  },
+  {
+    "name": "小津玲奈",
+    "group": "乃木坂46"
+  },
+  {
+    "name": "海邉朱莉",
+    "group": "乃木坂46"
+  },
+  {
+    "name": "川端晃菜",
+    "group": "乃木坂46"
+  },
+  {
+    "name": "鈴木佑捺",
+    "group": "乃木坂46"
+  },
+  {
+    "name": "瀬戸口心月",
+    "group": "乃木坂46"
+  },
+  {
+    "name": "長嶋凛桜",
+    "group": "乃木坂46"
+  },
+  {
+    "name": "増田三莉音",
+    "group": "乃木坂46"
+  },
+  {
+    "name": "森平麗心",
+    "group": "乃木坂46"
+  },
+  {
+    "name": "矢田萌華",
+    "group": "乃木坂46"
+  },
+  {
+    "name": "金村美玖",
+    "group": "日向坂46"
+  },
+  {
+    "name": "小坂菜緒",
+    "group": "日向坂46"
+  },
+  {
+    "name": "上村ひなの",
+    "group": "日向坂46"
+  },
+  {
+    "name": "髙橋未来虹",
+    "group": "日向坂46"
+  },
+  {
+    "name": "森本茉莉",
+    "group": "日向坂46"
+  },
+  {
+    "name": "石塚瑶季",
+    "group": "日向坂46"
+  },
+  {
+    "name": "小西夏菜実",
+    "group": "日向坂46"
+  },
+  {
+    "name": "清水理央",
+    "group": "日向坂46"
+  },
+  {
+    "name": "正源司陽子",
+    "group": "日向坂46"
+  },
+  {
+    "name": "竹内希来里",
+    "group": "日向坂46"
+  },
+  {
+    "name": "平尾帆夏",
+    "group": "日向坂46"
+  },
+  {
+    "name": "平岡海月",
+    "group": "日向坂46"
+  },
+  {
+    "name": "藤嶌果歩",
+    "group": "日向坂46"
+  },
+  {
+    "name": "宮地すみれ",
+    "group": "日向坂46"
+  },
+  {
+    "name": "山下葉留花",
+    "group": "日向坂46"
+  },
+  {
+    "name": "渡辺莉奈",
+    "group": "日向坂46"
+  },
+  {
+    "name": "大田美月",
+    "group": "日向坂46"
+  },
+  {
+    "name": "大野愛実",
+    "group": "日向坂46"
+  },
+  {
+    "name": "片山紗希",
+    "group": "日向坂46"
+  },
+  {
+    "name": "蔵盛妃那乃",
+    "group": "日向坂46"
+  },
+  {
+    "name": "坂井新奈",
+    "group": "日向坂46"
+  },
+  {
+    "name": "佐藤優羽",
+    "group": "日向坂46"
+  },
+  {
+    "name": "下田衣珠季",
+    "group": "日向坂46"
+  },
+  {
+    "name": "高井俐香",
+    "group": "日向坂46"
+  },
+  {
+    "name": "鶴崎仁香",
+    "group": "日向坂46"
+  },
+  {
+    "name": "松尾桜",
+    "group": "日向坂46"
+  },
+  {
+    "name": "大谷映美里",
+    "group": "=LOVE"
+  },
+  {
+    "name": "大場花菜",
+    "group": "=LOVE"
+  },
+  {
+    "name": "音嶋莉沙",
+    "group": "=LOVE"
+  },
+  {
+    "name": "齋藤樹愛羅",
+    "group": "=LOVE"
+  },
+  {
+    "name": "佐々木舞香",
+    "group": "=LOVE"
+  },
+  {
+    "name": "髙松瞳",
+    "group": "=LOVE"
+  },
+  {
+    "name": "瀧脇笙古",
+    "group": "=LOVE"
+  },
+  {
+    "name": "野口衣織",
+    "group": "=LOVE"
+  },
+  {
+    "name": "諸橋沙夏",
+    "group": "=LOVE"
+  },
+  {
+    "name": "山本杏奈",
+    "group": "=LOVE"
+  },
+  {
+    "name": "尾木波菜",
+    "group": "≠ME"
+  },
+  {
+    "name": "落合希来里",
+    "group": "≠ME"
+  },
+  {
+    "name": "蟹沢萌子",
+    "group": "≠ME"
+  },
+  {
+    "name": "河口夏音",
+    "group": "≠ME"
+  },
+  {
+    "name": "川中子奈月心",
+    "group": "≠ME"
+  },
+  {
+    "name": "櫻井もも",
+    "group": "≠ME"
+  },
+  {
+    "name": "鈴木瞳美",
+    "group": "≠ME"
+  },
+  {
+    "name": "谷崎早耶",
+    "group": "≠ME"
+  },
+  {
+    "name": "冨田菜々風",
+    "group": "≠ME"
+  },
+  {
+    "name": "永田詩央里",
+    "group": "≠ME"
+  },
+  {
+    "name": "本田珠由記",
+    "group": "≠ME"
+  },
+  {
+    "name": "逢田珠里依",
+    "group": "≒JOY"
+  },
+  {
+    "name": "天野香乃愛",
+    "group": "≒JOY"
+  },
+  {
+    "name": "市原愛弓",
+    "group": "≒JOY"
+  },
+  {
+    "name": "江角怜音",
+    "group": "≒JOY"
+  },
+  {
+    "name": "大信田美月",
+    "group": "≒JOY"
+  },
+  {
+    "name": "大西葵",
+    "group": "≒JOY"
+  },
+  {
+    "name": "小澤愛実",
+    "group": "≒JOY"
+  },
+  {
+    "name": "髙橋舞",
+    "group": "≒JOY"
+  },
+  {
+    "name": "藤沢莉子",
+    "group": "≒JOY"
+  },
+  {
+    "name": "村山結香",
+    "group": "≒JOY"
+  },
+  {
+    "name": "山田杏佳",
+    "group": "≒JOY"
+  },
+  {
+    "name": "山野愛月",
+    "group": "≒JOY"
+  },
+  {
+    "name": "青木宙帆",
+    "group": "僕が見たかった青空"
+  },
+  {
+    "name": "秋田莉杏",
+    "group": "僕が見たかった青空"
+  },
+  {
+    "name": "安納蒼衣",
+    "group": "僕が見たかった青空"
+  },
+  {
+    "name": "伊藤ゆず",
+    "group": "僕が見たかった青空"
+  },
+  {
+    "name": "今井優希",
+    "group": "僕が見たかった青空"
+  },
+  {
+    "name": "岩本理瑚",
+    "group": "僕が見たかった青空"
+  },
+  {
+    "name": "金澤亜美",
+    "group": "僕が見たかった青空"
+  },
+  {
+    "name": "木下藍",
+    "group": "僕が見たかった青空"
+  },
+  {
+    "name": "工藤唯愛",
+    "group": "僕が見たかった青空"
+  },
+  {
+    "name": "塩釜菜那",
+    "group": "僕が見たかった青空"
+  },
+  {
+    "name": "杉浦英恋",
+    "group": "僕が見たかった青空"
+  },
+  {
+    "name": "須永心海",
+    "group": "僕が見たかった青空"
+  },
+  {
+    "name": "西森杏弥",
+    "group": "僕が見たかった青空"
+  },
+  {
+    "name": "萩原心花",
+    "group": "僕が見たかった青空"
+  },
+  {
+    "name": "長谷川稀未",
+    "group": "僕が見たかった青空"
+  },
+  {
+    "name": "早﨑すずき",
+    "group": "僕が見たかった青空"
+  },
+  {
+    "name": "宮腰友里亜",
+    "group": "僕が見たかった青空"
+  },
+  {
+    "name": "八重樫美伊咲",
+    "group": "僕が見たかった青空"
+  },
+  {
+    "name": "八木仁愛",
+    "group": "僕が見たかった青空"
+  },
+  {
+    "name": "柳堀花怜",
+    "group": "僕が見たかった青空"
+  },
+  {
+    "name": "吉本此那",
+    "group": "僕が見たかった青空"
+  },
+  {
+    "name": "ACE",
+    "group": "WHITE SCORPION"
+  },
+  {
+    "name": "ACO",
+    "group": "WHITE SCORPION"
+  },
+  {
+    "name": "ALLY",
+    "group": "WHITE SCORPION"
+  },
+  {
+    "name": "AOI",
+    "group": "WHITE SCORPION"
+  },
+  {
+    "name": "CHOCO",
+    "group": "WHITE SCORPION"
+  },
+  {
+    "name": "COCO",
+    "group": "WHITE SCORPION"
+  },
+  {
+    "name": "HANNA",
+    "group": "WHITE SCORPION"
+  },
+  {
+    "name": "MOMO",
+    "group": "WHITE SCORPION"
+  },
+  {
+    "name": "NATSU",
+    "group": "WHITE SCORPION"
+  },
+  {
+    "name": "NAVI",
+    "group": "WHITE SCORPION"
+  },
+  {
+    "name": "NICO",
+    "group": "WHITE SCORPION"
+  },
+  {
+    "name": "朝宮日向",
+    "group": "Rain Tree"
+  },
+  {
+    "name": "綾瀬ことり",
+    "group": "Rain Tree"
+  },
+  {
+    "name": "市原紬希",
+    "group": "Rain Tree"
+  },
+  {
+    "name": "遠藤莉乃",
+    "group": "Rain Tree"
+  },
+  {
+    "name": "片瀬真花",
+    "group": "Rain Tree"
+  },
+  {
+    "name": "加藤柊",
+    "group": "Rain Tree"
+  },
+  {
+    "name": "佐藤莉華",
+    "group": "Rain Tree"
+  },
+  {
+    "name": "鈴野みお",
+    "group": "Rain Tree"
+  },
+  {
+    "name": "永瀬真梨",
+    "group": "Rain Tree"
+  },
+  {
+    "name": "仲俣美希",
+    "group": "Rain Tree"
+  },
+  {
+    "name": "新野楓果",
+    "group": "Rain Tree"
+  },
+  {
+    "name": "橋本真希",
+    "group": "Rain Tree"
+  },
+  {
+    "name": "葉山莉瑚",
+    "group": "Rain Tree"
+  },
+  {
+    "name": "水野乃愛",
+    "group": "Rain Tree"
+  },
+  {
+    "name": "百瀬紗菜",
+    "group": "Rain Tree"
+  },
+  {
+    "name": "吉川海未",
+    "group": "Rain Tree"
+  }
+]

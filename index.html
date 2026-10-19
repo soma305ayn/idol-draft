@@ -130,6 +130,12 @@ button:disabled{opacity:0.4; cursor:not-allowed;}
 .player-item .ppos{font-size:11px; color:var(--muted);}
 .player-item.selected{background:rgba(227,179,65,0.14); box-shadow:inset 3px 0 0 var(--gold);}
 .player-item.taken{opacity:0.35; cursor:default;}
+.ph{display:inline-flex; align-items:center; justify-content:center; flex:none; border-radius:50%; overflow:hidden; background:var(--ph-bg,#4a5568); color:#fff; font-weight:900; position:relative;}
+.ph img{width:100%; height:100%; object-fit:cover; display:block;}
+.ph-sm{width:40px; height:40px; font-size:16px;}
+.ph-lg{width:160px; height:160px; font-size:64px; margin:4px auto 10px; border:3px solid var(--gold-soft); box-shadow:0 0 0 rgba(227,179,65,0);}
+.ph-lg.winner{box-shadow:0 0 28px 8px rgba(227,179,65,.75); animation:phglow 1.6s ease-in-out infinite alternate;}
+@keyframes phglow{from{box-shadow:0 0 14px 4px rgba(227,179,65,.5);}to{box-shadow:0 0 34px 12px rgba(227,179,65,.9);}}
 .picked-tag{margin-left:auto; font-size:10.5px; color:var(--muted);}
 .submit-bar{margin-top:12px; display:flex; align-items:center; gap:10px;}
 .submit-bar .sel-name{flex:1; font-size:13.5px; color:var(--muted);}
@@ -219,72 +225,32 @@ button:disabled{opacity:0.4; cursor:not-allowed;}
 <div id="app"><div class="wrap"><p class="sub">読み込み中...</p></div></div>
 <script>
 const TEAM_COLORS=['#e3b341','#3e8963','#d9534f','#5a9bdc','#b06ae2','#e2903e','#3ec6c6','#c6a15b','#8c97ab','#e2609e','#6ae28c','#9b7be2','#d97ba0','#79a86a','#c98f4f','#5e8fd9','#a35ce0','#4fae94','#d96b6b','#8f9c4f'];
-const PRESET_PLAYERS=[
-  // 2期生（11名）
-  ['遠藤光莉','櫻坂46'],['大園玲','櫻坂46'],['大沼晶保','櫻坂46'],['幸阪茉里乃','櫻坂46'],
-  ['田村保乃','櫻坂46'],['藤吉夏鈴','櫻坂46'],['増本綺良','櫻坂46'],['松田里奈','櫻坂46'],
-  ['森田ひかる','櫻坂46'],['守屋麗奈','櫻坂46'],['山﨑天','櫻坂46'],
-
-  // 3期生（11名）
-  ['石森璃花','櫻坂46'],['遠藤理子','櫻坂46'],['小田倉麗奈','櫻坂46'],['小島凪紗','櫻坂46'],
-  ['谷口愛季','櫻坂46'],['中嶋優月','櫻坂46'],['的野美青','櫻坂46'],['向井純葉','櫻坂46'],
-  ['村井優','櫻坂46'],['村山美羽','櫻坂46'],['山下瞳月','櫻坂46'],
-
-  // 4期生（9名）
-  ['浅井恋乃未','櫻坂46'],['稲熊ひな','櫻坂46'],['勝又春','櫻坂46'],['佐藤愛桜','櫻坂46'],
-  ['中川智尋','櫻坂46'],['松本和子','櫻坂46'],['目黒陽色','櫻坂46'],['山川宇衣','櫻坂46'],
-  ['山田桃実','櫻坂46'],
-  
-  ['伊藤理々杏','乃木坂46'],['岩本蓮加','乃木坂46'],['遠藤さくら','乃木坂46'],['賀喜遥香','乃木坂46'],
-  ['金川紗耶','乃木坂46'],['黒見明香','乃木坂46'],['柴田柚菜','乃木坂46'],['田村真佑','乃木坂46'],
-  ['筒井あやめ','乃木坂46'],['林瑠奈','乃木坂46'],['弓木奈於','乃木坂46'],['五百城茉央','乃木坂46'],
-  ['池田瑛紗','乃木坂46'],['一ノ瀬美空','乃木坂46'],['井上和','乃木坂46'],['岡本姫奈','乃木坂46'],
-  ['小川彩','乃木坂46'],['奥田いろは','乃木坂46'],['川﨑桜','乃木坂46'],['菅原咲月','乃木坂46'],
-  ['冨里奈央','乃木坂46'],['中西アルノ','乃木坂46'],['愛宕心響','乃木坂46'],['大越ひなの','乃木坂46'],
-  ['小津玲奈','乃木坂46'],['海邉朱莉','乃木坂46'],['川端晃菜','乃木坂46'],['鈴木佑捺','乃木坂46'],
-  ['瀬戸口心月','乃木坂46'],['長嶋凛桜','乃木坂46'],['増田三莉音','乃木坂46'],['森平麗心','乃木坂46'],
-  ['矢田萌華','乃木坂46'],
-  
-  // 2期生（2名）
-  ['金村美玖','日向坂46'],['小坂菜緒','日向坂46'],
-
-  // 3期生（4名）
-  ['上村ひなの','日向坂46'],['髙橋未来虹','日向坂46'],['森本茉莉','日向坂46'],['山口陽世','日向坂46'],
-
-  // 4期生（11名）
-  ['石塚瑶季','日向坂46'],['小西夏菜実','日向坂46'],['清水理央','日向坂46'],['正源司陽子','日向坂46'],
-  ['竹内希来里','日向坂46'],['平尾帆夏','日向坂46'],['平岡海月','日向坂46'],['藤嶌果歩','日向坂46'],
-  ['宮地すみれ','日向坂46'],['山下葉留花','日向坂46'],['渡辺莉奈','日向坂46'],
-
-  // 5期生（10名）
-  ['大田美月','日向坂46'],['大野愛実','日向坂46'],['片山紗希','日向坂46'],['蔵盛妃那乃','日向坂46'],
-  ['坂井新奈','日向坂46'],['佐藤優羽','日向坂46'],['下田衣珠季','日向坂46'],['高井俐香','日向坂46'],
-  ['鶴崎仁香','日向坂46'],['松尾桜','日向坂46'],
-
-  
-  ['大谷映美里','=LOVE'],['大場花菜','=LOVE'],['音嶋莉沙','=LOVE'],['齋藤樹愛羅','=LOVE'],
-  ['佐々木舞香','=LOVE'],['髙松瞳','=LOVE'],['瀧脇笙古','=LOVE'],['野口衣織','=LOVE'],
-  ['諸橋沙夏','=LOVE'],['山本杏奈','=LOVE'],
-  ['尾木波菜','≠ME'],['落合希来里','≠ME'],['蟹沢萌子','≠ME'],['河口夏音','≠ME'],
-  ['川中子奈月心','≠ME'],['櫻井もも','≠ME'],['鈴木瞳美','≠ME'],['谷崎早耶','≠ME'],
-  ['冨田菜々風','≠ME'],['永田詩央里','≠ME'],['本田珠由記','≠ME'],
-  ['逢田珠里依','≒JOY'],['天野香乃愛','≒JOY'],['市原愛弓','≒JOY'],['江角怜音','≒JOY'],
-  ['大信田美月','≒JOY'],['大西葵','≒JOY'],['小澤愛実','≒JOY'],['髙橋舞','≒JOY'],
-  ['藤沢莉子','≒JOY'],['村山結香','≒JOY'],['山田杏佳','≒JOY'],['山野愛月','≒JOY'],
-  ['青木宙帆','僕が見たかった青空'],['秋田莉杏','僕が見たかった青空'],['安納蒼衣','僕が見たかった青空'],['伊藤ゆず','僕が見たかった青空'],
-  ['今井優希','僕が見たかった青空'],['岩本理瑚','僕が見たかった青空'],['金澤亜美','僕が見たかった青空'],['木下藍','僕が見たかった青空'],
-  ['工藤唯愛','僕が見たかった青空'],['塩釜菜那','僕が見たかった青空'],['杉浦英恋','僕が見たかった青空'],['須永心海','僕が見たかった青空'],
-  ['西森杏弥','僕が見たかった青空'],['萩原心花','僕が見たかった青空'],['長谷川稀未','僕が見たかった青空'],['早﨑すずき','僕が見たかった青空'],
-  ['宮腰友里亜','僕が見たかった青空'],['八重樫美伊咲','僕が見たかった青空'],['八木仁愛','僕が見たかった青空'],['柳堀花怜','僕が見たかった青空'],
-  ['吉本此那','僕が見たかった青空'],
-  ['ACE','WHITE SCORPION'],['ACO','WHITE SCORPION'],['ALLY','WHITE SCORPION'],['AOI','WHITE SCORPION'],
-  ['CHOCO','WHITE SCORPION'],['COCO','WHITE SCORPION'],['HANNA','WHITE SCORPION'],['MOMO','WHITE SCORPION'],
-  ['NATSU','WHITE SCORPION'],['NAVI','WHITE SCORPION'],['NICO','WHITE SCORPION'],
-  ['朝宮日向','Rain Tree'],['綾瀬ことり','Rain Tree'],['市原紬希','Rain Tree'],['遠藤莉乃','Rain Tree'],
-  ['片瀬真花','Rain Tree'],['加藤柊','Rain Tree'],['佐藤莉華','Rain Tree'],['鈴野みお','Rain Tree'],
-  ['永瀬真梨','Rain Tree'],['仲俣美希','Rain Tree'],['新野楓果','Rain Tree'],['橋本真希','Rain Tree'],
-  ['葉山莉瑚','Rain Tree'],['水野乃愛','Rain Tree'],['百瀬紗菜','Rain Tree'],['吉川海未','Rain Tree']
-];
+let PRESET_PLAYERS=[];
+let PHOTO_MAP={};
+const GROUP_PH_COLORS={'乃木坂46':'#7b4fa0','櫻坂46':'#d9779a','日向坂46':'#5a9bdc','=LOVE':'#e2609e','≠ME':'#3ec6c6','≒JOY':'#e2903e','僕が見たかった青空':'#4fae94','WHITE SCORPION':'#8c97ab','Rain Tree':'#79a86a'};
+function photoHTML(name, size, extraCls){
+  const pl=state&&state.players?state.players.find(x=>x.name===name):null;
+  const bg=GROUP_PH_COLORS[pl?pl.pos:'']||'#4a5568';
+  const url=PHOTO_MAP[name];
+  const ini=esc(String(name||'?').charAt(0));
+  const img=url?`<img src="${esc(url)}" alt="" loading="lazy" referrerpolicy="no-referrer" data-ini="${ini}">`:ini;
+  return `<span class="ph ph-${size} ${extraCls||''}" style="--ph-bg:${bg}">${img}</span>`;
+}
+document.addEventListener('error',e=>{ const t=e.target; if(t&&t.tagName==='IMG'&&t.dataset&&t.dataset.ini!==undefined){ t.replaceWith(document.createTextNode(t.dataset.ini)); } },true);
+let presetPlayersLoadError=false;
+async function loadPresetPlayers(){
+  try{
+    const res=await fetch('./players.json');
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const data=await res.json();
+    // {name, group} 形式のJSONを内部形式(name, pos)に変換
+    PRESET_PLAYERS=data.map(p=>[p.name, p.group]);
+    PHOTO_MAP={}; data.forEach(p=>{ if(p.photo) PHOTO_MAP[p.name]=p.photo; });
+  }catch(e){
+    presetPlayersLoadError=true;
+    PRESET_PLAYERS=[];
+  }
+}
 let roomCode=null, state=null, myId=null, lastStateStr=null;
 let selectedPlayerId=null, showBoard=false, boardTaken=true;
 const app=document.getElementById('app');
@@ -746,20 +712,45 @@ async function retireTeam(){
   if(!myId) return;
   const myTeamNow=teamById(myId.teamId);
   if(myTeamNow && myTeamNow.retiredFromRound!=null) return showToast('すでに指名終了を選択しています');
-  if(!(await showConfirm('今後の指名をすべて終了しますか？次の巡以降、あなたの球団の指名はスキップされます（この操作は取り消せません）。', '指名を終了する'))) return;
+  const notPickedYetThisRound = state.phase==='snake_pick'
+    && state.currentRoundOrder.indexOf(myId.teamId)!==-1
+    && state.currentRoundOrder.indexOf(myId.teamId)>=state.turnIndex;
+  const confirmMsg = notPickedYetThisRound
+    ? `今後の指名をすべて終了しますか？今回の${state.round}巡目もまだ指名していないためスキップされます（この操作は取り消せません）。`
+    : '今後の指名をすべて終了しますか？（この操作は取り消せません）';
+  if(!(await showConfirm(confirmMsg, '指名を終了する'))) return;
   await withRoomLock(async ()=>{
     await refreshState();
     if(stateLostGuard()) return;
     const t=teamById(myId.teamId);
     if(!t) return;
     if(t.retiredFromRound!=null){ showToast('すでに指名終了を選択しています'); render(); return; }
-    let effectiveRound;
-    if(state.phase==='round_summary' && state.pendingAfterSummary && state.pendingAfterSummary.phase==='snake_pick'){
-      effectiveRound = state.pendingAfterSummary.round;
+
+    if(state.phase==='snake_pick'){
+      // 巡の途中で指名終了する場合: まだこの巡で自分の指名が済んでいなければ、
+      // その場で指名順(currentRoundOrder)から自分を取り除き、詰める。
+      // これにより、自分の番が来ても待ち続けて全体が止まってしまうことを防ぐ。
+      const idx=state.currentRoundOrder.indexOf(myId.teamId);
+      if(idx!==-1 && idx>=state.turnIndex){
+        state.currentRoundOrder.splice(idx,1);
+      }
+      t.retiredFromRound=state.round;
+      // 取り除いた結果、この巡の指名者がいなくなった場合は、通常の巡終了処理と同様に感想会へ
+      if(state.turnIndex>=state.currentRoundOrder.length){
+        const completedRound=state.round;
+        const nextRound=completedRound+1;
+        state.roundSummary={round:completedRound, acked:{}};
+        state.pendingAfterSummary = nextRound>state.settings.totalRounds
+          ? {phase:'finished'}
+          : {phase:'snake_pick', round:nextRound};
+        state.phase='round_summary';
+      }
+    } else if(state.phase==='round_summary' && state.pendingAfterSummary && state.pendingAfterSummary.phase==='snake_pick'){
+      t.retiredFromRound=state.pendingAfterSummary.round;
     } else {
-      effectiveRound = (state.round||1) + 1;
+      t.retiredFromRound=(state.round||1)+1;
     }
-    t.retiredFromRound = effectiveRound;
+    if(selectedPlayerId && myId.teamId===t.id) selectedPlayerId=null;
     await saveState(); render();
   });
 }
@@ -857,6 +848,7 @@ function playerListHTML(idPrefix, selectable){
       <summary class="group-header">${esc(g.affiliation)} <span class="group-count">(${g.players.length})</span></summary>`;
     g.players.forEach(p=>{
       html+=`<div class="player-item ${selectedPlayerId===p.id?'selected':''}" data-act="select-player" data-id="${p.id}">
+        ${photoHTML(p.name,'sm')}
         <div><div class="pname">${esc(p.name)}</div>${p.pos?`<div class="ppos">${esc(p.pos)}</div>`:''}</div>
       </div>`;
     });
@@ -1048,12 +1040,16 @@ function renderRoomGate(){
     <div class="sub">スマホだけで進行できる、ゲームマスター不要のオンラインドラフト会議です。全員がそれぞれの端末から指名・抽選に参加できます。</div>
   </div>
   <div class="wrap">
+    ${presetPlayersLoadError?`<div class="card" style="border-color:var(--danger);">
+      <h2 style="color:#ff8b87;">選手データを読み込めませんでした</h2>
+      <p class="note">players.json が index.html と同じ場所に置かれているか確認してください。ファイルを直接開いている場合は、GitHub Pages等のWebサーバー経由で開く必要があります。</p>
+    </div>`:''}
     <div class="card">
       <h2>部屋番号を入力</h2>
       <p class="note">参加者全員が同じ「部屋番号」を入力することで、同じドラフトに参加できます。まだ部屋がなければ、入力した番号でそのまま新しい部屋が作られます。合言葉のようなものなので、好きな文字列で構いません（例：sakura2026）。</p>
       <label>部屋番号</label>
       <input type="text" id="in-roomcode" value="${esc(loadLastRoom())}" placeholder="例：sakura2026">
-      <button class="btn-primary btn-block" data-act="enter-room">この番号で入室する</button>
+      <button class="btn-primary btn-block" data-act="enter-room" ${presetPlayersLoadError?'disabled':''}>この番号で入室する</button>
       <button class="btn-ghost btn-block" data-act="enter-room-spectator" style="margin-top:8px;">この番号を観戦する（参加せず見るだけ）</button>
     </div>
   </div>`;
@@ -1114,6 +1110,7 @@ function playerPoolListHTML(){
       <summary class="group-header">${esc(g.affiliation)} <span class="group-count">(${g.players.length})</span></summary>`;
     g.players.forEach(p=>{
       html+=`<div class="player-item ${p.status==='taken'?'taken':''}">
+        ${photoHTML(p.name,'sm')}
         <div><div class="pname">${esc(p.name)}</div>${p.pos?`<div class="ppos">${esc(p.pos)}</div>`:''}</div>
         ${p.status==='taken'?`<div class="picked-tag">${esc(teamById(p.ownerTeamId)?.name||'')}が指名</div>`:''}
       </div>`;
@@ -1234,6 +1231,7 @@ function renderLottery(){
   let html=`${statusBarHTML()}<div class="wrap">
   <div class="lottery-stage">
     <div class="lot-label disp">競合指名・抽選</div>
+    ${photoHTML(player.name,'lg',cur.winnerTeamId?'winner':'')}
     <div class="lot-player">${esc(player.name)}</div>
     <p class="note" style="margin-top:-6px;">この選手を指名した参加者</p>
     <div class="contenders">${cur.contendingTeamIds.map(tid=>{const t=teamById(tid); return `<span class="turn-pill ${cur.winnerTeamId&&cur.winnerTeamId!==tid?'done':''}">${esc(teamDisplayName(t))}</span>`;}).join('')}</div>
@@ -1276,7 +1274,12 @@ function renderSnakePick(){
     <h2>${esc(teamDisplayName(teamById(curTeamId)))} が選考中...</h2>
     <p class="note">自分の番になったらこの画面から選手を指名できます。</p>`}
   </div>
-  ${alreadyRetired ? `<div class="card"><p class="note">あなたの球団は${myTeamData.retiredFromRound}巡目から指名を終了しています。</p></div>` : ''}
+  ${alreadyRetired
+    ? `<div class="card"><p class="note">あなたの球団は${myTeamData.retiredFromRound}巡目から指名を終了しています。</p></div>`
+    : `<div class="card">
+         <button class="btn-ghost btn-block" data-act="retire-team">指名終了</button>
+         <p class="note" style="margin-top:6px;">押すと、まだ指名していない場合は今回の巡もスキップされ、以降すべての巡で指名がスキップされます（取り消し不可）。</p>
+       </div>`}
   ${boardToggleHTML()}
   </div>`;
   app.innerHTML=html;
@@ -1308,7 +1311,8 @@ function renderSpectatorView(){
     const player=playerById(cur.playerId);
     phaseInfo=`<div class="lottery-stage">
       <div class="lot-label disp">競合指名・抽選</div>
-      <div class="lot-player">${esc(player.name)}</div>
+      ${photoHTML(player.name,'lg',cur.winnerTeamId?'winner':'')}
+    <div class="lot-player">${esc(player.name)}</div>
       <p class="note" style="margin-top:-6px;">この選手を指名した参加者</p>
       <div class="contenders">${cur.contendingTeamIds.map(tid=>{const t=teamById(tid); return `<span class="turn-pill ${cur.winnerTeamId&&cur.winnerTeamId!==tid?'done':''}">${esc(teamDisplayName(t))}</span>`;}).join('')}</div>
       <div class="lottery-slot disp ${cur.winnerTeamId?'winner':''}">${cur.winnerTeamId?esc(teamDisplayName(teamById(cur.winnerTeamId))):'抽選待ち…'}</div>
@@ -1538,6 +1542,7 @@ app.addEventListener('click', (e)=>{
 
 /* ---------- init ---------- */
 (async function init(){
+  await loadPresetPlayers();
   const last=loadLastRoom();
   if(last){
     await enterRoom(last);
