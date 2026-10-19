@@ -406,6 +406,8 @@ function normalizeState(s){
   s.players = s.players || [];
   s.log = s.log || [];
   s.waiverOrder = s.waiverOrder || [];
+  s.settings = s.settings || {};
+  if(s.settings.lotteryAllRounds===undefined) s.settings.lotteryAllRounds=false;
   s.currentRoundOrder = s.currentRoundOrder || [];
   s.round1 = s.round1 || {};
   s.round1.submissions = s.round1.submissions || {};
@@ -510,14 +512,14 @@ function teamById(id){ return state.teams.find(t=>t.id===id); }
 function playerById(id){ return state.players.find(p=>p.id===id); }
 
 /* ---------- actions ---------- */
-async function createRoom(teamCount, totalRounds){
+async function createRoom(teamCount, totalRounds, lotteryAllRounds){
   const teams=[];
   for(let i=1;i<=teamCount;i++){
     teams.push({id:uid('team'), name:`${i}球団目`, claimedBy:null, color:TEAM_COLORS[(i-1)%TEAM_COLORS.length]});
   }
   const players=PRESET_PLAYERS.map(([name,pos])=>({id:uid('p'), name, pos, status:'available', ownerTeamId:null, round:null}));
   state={
-    version:1, createdAt:Date.now(), settings:{teamCount, totalRounds},
+    version:1, createdAt:Date.now(), settings:{teamCount, totalRounds, lotteryAllRounds:!!lotteryAllRounds},
     teams, players, phase:'setup', round:1,
     round1:{submissions:{}, pendingTeamIds:teams.map(t=>t.id), lotteryQueue:[], currentLottery:null},
     waiverOrder:[], turnIndex:0, log:[]
@@ -581,7 +583,7 @@ async function submitRound1(){
     await refreshState();
     if(stateLostGuard()) return;
     if(state.phase!=='round1_submit'){ showToast('状況が変わりました。画面を更新します。'); render(); return; }
-    if(!myId||!state.round1.pendingTeamIds.includes(myId.teamId)){ showToast('現在、あなたの球団は1巡目の指名対象ではありません。'); render(); return; }
+    if(!myId||!state.round1.pendingTeamIds.includes(myId.teamId)){ showToast('現在、あなたの球団は'+(state.round||1)+'巡目の指名対象ではありません。'); render(); return; }
     if(state.round1.submissions[myId.teamId]) { showToast('すでに提出済みです'); render(); return; }
     const p=playerById(selectedPlayerId);
     if(!p||p.status!=='available'){ showToast('その選手は選択できません'); selectedPlayerId=null; render(); return; }
@@ -601,7 +603,7 @@ async function revealRound1(){
     pend.forEach(tid=>{ const pid=subs[tid]; (groups[pid]=groups[pid]||[]).push(tid); });
     const queue=[];
     Object.entries(groups).forEach(([pid,tids])=>{
-      if(tids.length===1) assignPick(tids[0], pid, 1, 'normal');
+      if(tids.length===1) assignPick(tids[0], pid, state.round||1, 'normal');
       else queue.push({playerId:pid, contendingTeamIds:tids, winnerTeamId:null});
     });
     const stillPending=[];
@@ -614,14 +616,33 @@ async function revealRound1(){
   });
 }
 function finishRound1(){
-  // 基準順(ウェーバー順)は球団番号順(1球団目→順に)。2巡目=基準順、3巡目=逆順、4巡目=基準順…と交互に使う
-  const claimed=state.teams.filter(t=>t.claimedBy).map(t=>t.id);
-  state.waiverOrder=claimed;
-  state.roundSummary={round:1, acked:{}};
-  state.pendingAfterSummary = state.settings.totalRounds>=2
-    ? {phase:'snake_pick', round:2, turnIndex:0}
-    : {phase:'finished'};
+  // 巡が確定した時の共通処理(1巡目は常に同時指名+抽選。抽選方式の部屋では2巡目以降も同じ流れを使う)
+  const completed=state.round||1;
+  if(completed===1){
+    // 基準順(ウェーバー順)は球団番号順(1球団目→順に)。2巡目=基準順、3巡目=逆順、4巡目=基準順…と交互に使う
+    const claimed=state.teams.filter(t=>t.claimedBy).map(t=>t.id);
+    state.waiverOrder=claimed;
+  }
+  state.roundSummary={round:completed, acked:{}};
+  const next=completed+1;
+  if(state.settings.lotteryAllRounds){
+    state.pendingAfterSummary = next>state.settings.totalRounds
+      ? {phase:'finished'}
+      : {phase:'round1_submit', round:next};
+  } else {
+    state.pendingAfterSummary = state.settings.totalRounds>=2
+      ? {phase:'snake_pick', round:2, turnIndex:0}
+      : {phase:'finished'};
+  }
   state.phase='round_summary';
+}
+/* 抽選方式: round以降で、指名終了していない参加球団が1つ以上いる最初の巡を探す。いなければnull */
+function resolveNextLotteryRound(round){
+  for(let r=round; r<=state.settings.totalRounds; r++){
+    const active=state.teams.filter(t=>t.claimedBy && !(t.retiredFromRound!=null && r>=t.retiredFromRound)).map(t=>t.id);
+    if(active.length>0) return {round:r, teamIds:active};
+  }
+  return null;
 }
 let lotteryDrawing=false;
 async function drawLottery(){
@@ -673,7 +694,7 @@ async function finalizeLottery(expectedPlayerId){
       }
       cur=state.round1.currentLottery;
       winnerId=cur.contendingTeamIds[Math.floor(Math.random()*cur.contendingTeamIds.length)];
-      assignPick(winnerId, cur.playerId, 1, 'lottery');
+      assignPick(winnerId, cur.playerId, state.round||1, 'lottery');
       cur.winnerTeamId=winnerId;
       state.round1.pendingTeamIds=state.round1.pendingTeamIds.filter(t=>t!==winnerId);
       const saved=await saveState();
@@ -734,6 +755,7 @@ async function retireTeam(){
   if(!myId) return;
   const myTeamNow=teamById(myId.teamId);
   if(myTeamNow && myTeamNow.retiredFromRound!=null) return showToast('すでに指名終了を選択しています');
+  if(state.phase==='lottery') return showToast('抽選の進行中は指名終了できません。抽選が終わってからお試しください。');
   const notPickedYetThisRound = state.phase==='snake_pick'
     && state.currentRoundOrder.indexOf(myId.teamId)!==-1
     && state.currentRoundOrder.indexOf(myId.teamId)>=state.turnIndex;
@@ -748,7 +770,21 @@ async function retireTeam(){
     if(!t) return;
     if(t.retiredFromRound!=null){ showToast('すでに指名終了を選択しています'); render(); return; }
 
-    if(state.phase==='snake_pick'){
+    if(state.phase==='lottery'){
+      showToast('抽選の進行中は指名終了できません。抽選が終わってからお試しください。'); render(); return;
+    }
+    if(state.phase==='round1_submit' && (state.round||1)>=2 && state.settings.lotteryAllRounds){
+      // 抽選方式の巡の途中で指名終了: 今回の巡の提出対象から外す
+      const pend=state.round1.pendingTeamIds;
+      if(pend.includes(myId.teamId)){
+        state.round1.pendingTeamIds=pend.filter(x=>x!==myId.teamId);
+        delete state.round1.submissions[myId.teamId];
+        t.retiredFromRound=state.round;
+        if(state.round1.pendingTeamIds.length===0) finishRound1();
+      } else {
+        t.retiredFromRound=state.round+1; // 今回の巡は指名済みなので次の巡から
+      }
+    } else if(state.phase==='snake_pick'){
       // 巡の途中で指名終了する場合: まだこの巡で自分の指名が済んでいなければ、
       // その場で指名順(currentRoundOrder)から自分を取り除き、詰める。
       // これにより、自分の番が来ても待ち続けて全体が止まってしまうことを防ぐ。
@@ -767,7 +803,7 @@ async function retireTeam(){
           : {phase:'snake_pick', round:nextRound};
         state.phase='round_summary';
       }
-    } else if(state.phase==='round_summary' && state.pendingAfterSummary && state.pendingAfterSummary.phase==='snake_pick'){
+    } else if(state.phase==='round_summary' && state.pendingAfterSummary && (state.pendingAfterSummary.phase==='snake_pick' || state.pendingAfterSummary.phase==='round1_submit')){
       t.retiredFromRound=state.pendingAfterSummary.round;
     } else {
       t.retiredFromRound=(state.round||1)+1;
@@ -790,7 +826,17 @@ async function ackRoundSummary(){
     const allAcked = claimedIds.length>0 && claimedIds.every(tid=>state.roundSummary.acked[tid]);
     if(allAcked){
       const pending = state.pendingAfterSummary || {phase:'finished'};
-      if(pending.phase==='snake_pick'){
+      if(pending.phase==='round1_submit'){
+        const nl=resolveNextLotteryRound(pending.round);
+        if(nl){
+          state.phase='round1_submit';
+          state.round=nl.round;
+          state.round1.pendingTeamIds=nl.teamIds;
+          state.round1.submissions={}; state.round1.lotteryQueue=[]; state.round1.currentLottery=null;
+        } else {
+          state.phase='finished';
+        }
+      } else if(pending.phase==='snake_pick'){
         const next=resolveNextActiveRound(pending.round);
         if(next){
           state.phase='snake_pick';
@@ -1062,9 +1108,9 @@ function statusBarHTML(){
   let rlabel='', plabel='', badge='';
   if(state.phase==='setup'){ rlabel='準備中'; plabel='参加登録・選手登録'; badge='<span class="badge wait">SETUP</span>'; }
   else if(state.phase==='round1_submit'){
-    rlabel='1巡目'; const done=Object.keys(state.round1.submissions).length; const total=state.round1.pendingTeamIds.length;
+    rlabel=(state.round||1)+'巡目'; const done=Object.keys(state.round1.submissions).length; const total=state.round1.pendingTeamIds.length;
     plabel=`指名提出 ${done}/${total}`; badge='<span class="badge wait">入力中</span>';
-  } else if(state.phase==='lottery'){ rlabel='1巡目'; plabel='競合抽選'; badge='<span class="badge turn">抽選</span>'; }
+  } else if(state.phase==='lottery'){ rlabel=(state.round||1)+'巡目'; plabel='競合抽選'; badge='<span class="badge turn">抽選</span>'; }
   else if(state.phase==='snake_pick'){
     rlabel=`${state.round}巡目`; const t=teamById((state.currentRoundOrder||[])[state.turnIndex]);
     plabel=`${t?teamDisplayName(t):''} の番です`; badge='<span class="badge go">進行中</span>';
@@ -1109,6 +1155,11 @@ function renderCreateRoom(){
       <input type="number" id="in-teamcount" value="10" min="2" max="20">
       <label>全体の巡数（何巡まで行うか）</label>
       <input type="number" id="in-rounds" value="5" min="1" max="15">
+      <label>2巡目以降の指名方式</label>
+      <select id="in-mode">
+        <option value="snake">ウェーバー／逆ウェーバー方式（順番に指名）</option>
+        <option value="lottery">全巡 抽選方式（1巡目と同じ同時指名・重複は抽選）</option>
+      </select>
       <button class="btn-primary btn-block" data-act="create-room">この設定でドラフトを作成する</button>
       <p class="note">選手プールには固定リスト(${PRESET_PLAYERS.length}人)が自動で登録されます。作成後、参加者は同じ部屋番号「${esc(roomCode)}」を入力してから自分の球団を選びます。</p>
       <button class="btn-ghost btn-block" data-act="leave-room">別の部屋番号を使う</button>
@@ -1119,6 +1170,7 @@ function renderJoinScreen(){
   const teams=state.teams;
   let html=`${statusBarHTML()}<div class="wrap">`;
   html+=`<div class="card"><h2>参加登録</h2>
+    <p class="note" style="margin-top:0;">指名方式: ${state.settings.lotteryAllRounds?'全巡 抽選方式（毎巡 同時指名・重複は抽選）':'1巡目は抽選／2巡目以降はウェーバー・逆ウェーバー'}</p>
     <label>ニックネーム</label>
     <input type="text" id="in-nick" value="${myId?esc(myId.nickname):''}" placeholder="例：たなか">
     <p class="note">担当したい球団をタップしてください。空いている球団のみ選べます。</p>`;
@@ -1203,17 +1255,32 @@ function resolveNextActiveRound(round){
   }
   return null;
 }
+function lotteryRetireCardHTML(){
+  const me=myTeam();
+  if(!state.settings.lotteryAllRounds || (state.round||1)<2 || !me) return '';
+  if(me.retiredFromRound!=null) return `<div class="card"><p class="note">あなたの球団は${me.retiredFromRound}巡目から指名を終了しています。</p></div>`;
+  return `<div class="card">
+    <button class="btn-ghost btn-block" data-act="retire-team">指名終了</button>
+    <p class="note" style="margin-top:6px;">押すと、まだ指名を確定していない場合は今回の巡もスキップされ、以降すべての巡で指名がスキップされます（取り消し不可）。</p>
+  </div>`;
+}
 function renderRound1Submit(){
   const amPending = state.round1.pendingTeamIds.includes(myId.teamId);
-  const myPick = (state.log||[]).find(l=>l.round===1 && l.teamId===myId.teamId);
+  const myPick = (state.log||[]).find(l=>l.round===(state.round||1) && l.teamId===myId.teamId);
   if(!amPending && myPick){
     return renderRound1DecidedScreen(myPick);
+  }
+  if(!amPending && !myPick){
+    app.innerHTML=`${statusBarHTML()}<div class="wrap">
+      <div class="card"><h2>${state.round||1}巡目</h2><p class="sub">あなたの球団は今回の巡の指名対象ではありません（指名終了）。画面は自動で更新されます。</p></div>
+      ${round1ProgressHTML()}${boardToggleHTML()}</div>`;
+    return;
   }
   const submitted=!!state.round1.submissions[myId.teamId];
   const done=Object.keys(state.round1.submissions).length, total=state.round1.pendingTeamIds.length;
   let html=`${statusBarHTML()}<div class="wrap">
   <div class="card">
-    <h2>1巡目 指名（${esc(myTeam().name)}）</h2>
+    <h2>${state.round||1}巡目 指名（${esc(myTeam().name)}）</h2>
     ${submitted?`<p class="sub">提出しました。他球団の入力を待っています（${done}/${total}）。</p>`:`
     <p class="note">全球団が同時に1人を指名します。他球団の選択は締切まで見えません。重複した場合はこの後の画面で抽選になります。</p>
     <input type="text" id="filter-r1" placeholder="選手を検索" oninput="filterPlayers('r1-list', this.value)">
@@ -1232,6 +1299,7 @@ function renderRound1Submit(){
     <button class="btn-gold btn-block" data-act="reveal-r1" ${done<total?'disabled':''}>${done<total?'全員の提出を待っています':'開封して結果発表'}</button>
   </div>
   ${round1ProgressHTML()}
+  ${lotteryRetireCardHTML()}
   ${boardToggleHTML()}
   </div>`;
   app.innerHTML=html;
@@ -1242,7 +1310,7 @@ function renderRound1DecidedScreen(myPick){
   let html=`${statusBarHTML()}<div class="wrap">
   <div class="card" style="border-color:var(--field-light); text-align:center;">
     <div style="font-size:12px; letter-spacing:.15em; color:var(--field-light); font-family:'Oswald',sans-serif; text-transform:uppercase;">DECIDED</div>
-    <h2 style="margin-top:8px;">✅ あなたの1巡目指名は確定しています</h2>
+    <h2 style="margin-top:8px;">✅ あなたの${state.round||1}巡目指名は確定しています</h2>
     <div style="font-size:22px; font-weight:900; margin:10px 0 4px;">${esc(p?p.name:'?')}</div>
     ${myPick.method==='lottery'?'<p class="note">抽選の結果、獲得しました 🎯</p>':'<p class="note">単独指名で獲得しました</p>'}
   </div>
@@ -1250,15 +1318,16 @@ function renderRound1DecidedScreen(myPick){
     <p class="sub">他に${waitingCount}球団が、選手の重複による再抽選・再指名の対応中です。しばらくお待ちください。画面は自動で更新されます。</p>
   </div>
   ${round1ProgressHTML()}
+  ${lotteryRetireCardHTML()}
   ${boardToggleHTML()}
   </div>`;
   app.innerHTML=html;
 }
 function round1ProgressHTML(){
-  const picks=(state.log||[]).filter(l=>l.round===1);
+  const picks=(state.log||[]).filter(l=>l.round===(state.round||1));
   if(picks.length===0) return '';
   return `<div class="card">
-    <h2>ここまでの1巡目 指名結果</h2>
+    <h2>ここまでの${state.round||1}巡目 指名結果</h2>
     <div class="turn-order">${picks.map(l=>{
       const t=teamById(l.teamId), p=playerById(l.playerId);
       if(!t||!p) return '';
@@ -1340,7 +1409,7 @@ function renderSpectatorView(){
     </div>`;
   } else if(state.phase==='round1_submit'){
     const done=Object.keys(state.round1.submissions).length, total=state.round1.pendingTeamIds.length;
-    phaseInfo=`<div class="card"><h2>1巡目 指名提出中</h2>
+    phaseInfo=`<div class="card"><h2>${state.round||1}巡目 指名提出中</h2>
       <p class="sub">${done}/${total}球団が提出済み（内容は開封まで非公開です）</p>
       <div class="turn-order">${state.round1.pendingTeamIds.map(tid=>{
         const t=teamById(tid); const ok=!!state.round1.submissions[tid];
@@ -1558,7 +1627,8 @@ app.addEventListener('click', (e)=>{
   else if(act==='create-room'){
     const tc=parseInt(document.getElementById('in-teamcount').value,10)||10;
     const rd=parseInt(document.getElementById('in-rounds').value,10)||5;
-    createRoom(Math.max(2,Math.min(20,tc)), Math.max(1,Math.min(15,rd)));
+    const modeEl=document.getElementById('in-mode');
+    createRoom(Math.max(2,Math.min(20,tc)), Math.max(1,Math.min(15,rd)), !!modeEl && modeEl.value==='lottery');
   } else if(act==='claim-team'){
     const nick=document.getElementById('in-nick').value;
     claimTeam(id, nick);
