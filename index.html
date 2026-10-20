@@ -540,6 +540,7 @@ async function claimTeam(teamId, nickname, teamName){
   await withRoomLock(async ()=>{
     await refreshState();
     if(stateLostGuard()) return;
+    if(state.phase!=='setup'){ showToast('ドラフトが始まったため、観戦のみできます'); render(); return; }
     const team=teamById(teamId);
     if(!team) return showToast('チームが見つかりません。画面を更新してください。');
     if(team.claimedBy && team.claimedBy!==nickname.trim()) return showToast('このチームはすでに他の人が担当しています');
@@ -1177,6 +1178,16 @@ function renderCreateRoom(){
 function renderJoinScreen(){
   const teams=state.teams;
   let html=`${statusBarHTML()}<div class="wrap">`;
+  if(state.phase!=='setup'){
+    // ドラフト開始後の途中参加はできない。観戦のみ
+    html+=`<div class="card"><h2>ドラフトはすでに始まっています</h2>
+      <p class="note">途中からは観戦のみできます。</p>
+      <button class="btn-primary btn-block" data-act="switch-to-spectator">観戦する</button>
+      <button class="btn-ghost btn-block" data-act="leave-room" style="margin-top:8px;">別の部屋番号を使う</button>
+    </div></div>`;
+    app.innerHTML=html;
+    return;
+  }
   html+=`<div class="card"><h2>参加登録</h2>
     <p class="note" style="margin-top:0;">指名方式: ${state.settings.lotteryAllRounds?'全巡 抽選方式':'ウェーバー／逆ウェーバー方式'}</p>
     <label>ニックネーム</label>
@@ -1191,12 +1202,8 @@ function renderJoinScreen(){
     </div>`;
   });
   html+=`</div>`;
-  if(state.phase==='setup'){
-    html+=`<div class="card"><h2>登録済み選手 (${state.players.length}人)</h2>${playerPoolListHTML()}</div>
-    <button class="btn-gold btn-block" data-act="start-draft">全員揃ったらドラフト開始</button>`;
-  } else {
-    html+=`<div class="card"><h2>ドラフトはすでに進行中です</h2><p class="note">担当球団を選ぶと途中から参加できます。</p></div>`;
-  }
+  html+=`<div class="card"><h2>登録済み選手 (${state.players.length}人)</h2>${playerPoolListHTML()}</div>
+  <button class="btn-gold btn-block" data-act="start-draft">全員揃ったらドラフト開始</button>`;
   html+=`</div>`;
   html+=`<div class="card"><span class="toggle-link" data-act="switch-to-spectator">参加せずに観戦だけする ▸</span></div>`;
   app.innerHTML=html;
