@@ -763,8 +763,8 @@ async function retireTeam(){
     && state.currentRoundOrder.indexOf(myId.teamId)!==-1
     && state.currentRoundOrder.indexOf(myId.teamId)>=state.turnIndex;
   const confirmMsg = notPickedYetThisRound
-    ? `今後の指名をすべて終了しますか？今回の${state.round}巡目もまだ指名していないためスキップされます（この操作は取り消せません）。`
-    : '今後の指名をすべて終了しますか？（この操作は取り消せません）';
+    ? `今後の指名をすべて終了しますか？今回の${state.round}巡目もまだ指名していないためスキップされます。取り消しはできません。`
+    : '今後の指名をすべて終了しますか？取り消しはできません。';
   if(!(await showConfirm(confirmMsg, '指名を終了する'))) return;
   await withRoomLock(async ()=>{
     await refreshState();
@@ -859,7 +859,7 @@ async function ackRoundSummary(){
   });
 }
 async function resetRoom(){
-  if(!(await showConfirm('このドラフト全体をリセットします。よろしいですか？', 'リセットする'))) return;
+  if(!(await showConfirm('この会議を終了し、全員のデータを削除します。よろしいですか？', 'リセットする'))) return;
   try{ await fetch(roomUrl(), {method:'DELETE'}); }catch(e){}
   clearIdentityLocal();
   roomCode=null; state=null; myId=null; lastStateStr=null; currentEtag=null;
@@ -1117,6 +1117,11 @@ function statusBarHTML(){
   else if(state.phase==='snake_pick'){
     rlabel=`${state.round}巡目`; const t=teamById((state.currentRoundOrder||[])[state.turnIndex]);
     plabel=`${t?teamDisplayName(t):''} の番です`; badge='<span class="badge go">進行中</span>';
+  } else if(state.phase==='round_summary'){
+    const rs=state.roundSummary||{round:state.round||1, acked:{}};
+    const claimed=state.teams.filter(t=>t.claimedBy);
+    const acked=claimed.filter(t=>rs.acked && rs.acked[t.id]).length;
+    rlabel=rs.round+'巡目'; plabel=`次へ ${acked}/${claimed.length}人`; badge='<span class="badge wait">感想会</span>';
   } else if(state.phase==='finished'){ rlabel='終了'; plabel='ドラフト会議 完了'; badge='<span class="badge go">FIN</span>'; }
   return `<div class="status-bar"><div><div class="r disp">${rlabel}</div><div class="p">部屋番号: ${esc(roomCode)}｜${plabel}</div></div>${badge}</div>`;
 }
@@ -1140,7 +1145,7 @@ function renderRoomGate(){
       <label>部屋番号</label>
       <input type="text" id="in-roomcode" value="${esc(loadLastRoom())}" placeholder="例：sakura2026">
       <button class="btn-primary btn-block" data-act="enter-room" ${presetPlayersLoadError?'disabled':''}>この番号で入室する</button>
-      <button class="btn-ghost btn-block" data-act="enter-room-spectator" style="margin-top:8px;">この番号を観戦する（参加せず見るだけ）</button>
+      <button class="btn-ghost btn-block" data-act="enter-room-spectator" style="margin-top:8px;">この番号で観戦する</button>
     </div>
   </div>`;
 }
@@ -1156,7 +1161,7 @@ function renderCreateRoom(){
       <h2>新しいドラフトを開始</h2>
       <label>参加チーム数</label>
       <input type="number" id="in-teamcount" value="10" min="2" max="20">
-      <label>全体の巡数（何巡まで行うか）</label>
+      <label>巡数</label>
       <input type="number" id="in-rounds" value="5" min="1" max="15">
       <label>2巡目以降の指名方式</label>
       <div class="mode-toggle" id="in-mode" data-mode="snake">
@@ -1264,7 +1269,7 @@ function lotteryRetireCardHTML(){
   if(me.retiredFromRound!=null) return `<div class="card"><p class="note">あなたの球団は${me.retiredFromRound}巡目から指名を終了しています。</p></div>`;
   return `<div class="card">
     <button class="btn-ghost btn-block" data-act="retire-team">指名終了</button>
-    <p class="note" style="margin-top:6px;">押すと、まだ指名を確定していない場合は今回の巡もスキップされ、以降すべての巡で指名がスキップされます（取り消し不可）。</p>
+    <p class="note" style="margin-top:6px;">押すと、まだ指名を確定していない場合は今回の巡もスキップされ、以降すべての巡で指名がスキップされます。取り消しはできません。</p>
   </div>`;
 }
 function renderRound1Submit(){
@@ -1275,7 +1280,7 @@ function renderRound1Submit(){
   }
   if(!amPending && !myPick){
     app.innerHTML=`${statusBarHTML()}<div class="wrap">
-      <div class="card"><h2>${state.round||1}巡目</h2><p class="sub">あなたの球団は今回の巡の指名対象ではありません（指名終了）。画面は自動で更新されます。</p></div>
+      <div class="card"><h2>${state.round||1}巡目</h2><p class="sub">${myTeam()&&myTeam().retiredFromRound!=null?'あなたの球団は指名を終了しています。':'途中参加のため、この巡の指名はありません。次の巡から指名できます。'}画面は自動で更新されます。</p></div>
       ${round1ProgressHTML()}${boardToggleHTML()}</div>`;
     return;
   }
@@ -1294,7 +1299,7 @@ function renderRound1Submit(){
     </div>`}
   </div>
   <div class="card">
-    <h2>提出状況（再抽選対象の球団のみ）</h2>
+    <h2>提出状況</h2>
     <div class="turn-order">${state.round1.pendingTeamIds.map(tid=>{
       const t=teamById(tid); const ok=!!state.round1.submissions[tid];
       return `<span class="turn-pill ${ok?'done':''}">${esc(teamDisplayName(t))}${ok?' ✓':''}</span>`;
@@ -1391,7 +1396,7 @@ function renderSnakePick(){
     ? `<div class="card"><p class="note">あなたの球団は${myTeamData.retiredFromRound}巡目から指名を終了しています。</p></div>`
     : `<div class="card">
          <button class="btn-ghost btn-block" data-act="retire-team">指名終了</button>
-         <p class="note" style="margin-top:6px;">押すと、まだ指名していない場合は今回の巡もスキップされ、以降すべての巡で指名がスキップされます（取り消し不可）。</p>
+         <p class="note" style="margin-top:6px;">押すと、まだ指名していない場合は今回の巡もスキップされ、以降すべての巡で指名がスキップされます。取り消しはできません。</p>
        </div>`}
   ${boardToggleHTML()}
   </div>`;
@@ -1413,7 +1418,7 @@ function renderSpectatorView(){
   } else if(state.phase==='round1_submit'){
     const done=Object.keys(state.round1.submissions).length, total=state.round1.pendingTeamIds.length;
     phaseInfo=`<div class="card"><h2>${state.round||1}巡目 指名提出中</h2>
-      <p class="sub">${done}/${total}球団が提出済み（内容は開封まで非公開です）</p>
+      <p class="sub">${done}/${total}球団が提出済み</p>
       <div class="turn-order">${state.round1.pendingTeamIds.map(tid=>{
         const t=teamById(tid); const ok=!!state.round1.submissions[tid];
         return `<span class="turn-pill ${ok?'done':''}">${esc(teamDisplayName(t))}${ok?' ✓':''}</span>`;
@@ -1505,7 +1510,7 @@ function renderRoundSummary(){
   ${(myId && myTeam() && myTeam().retiredFromRound==null) ? `
   <div class="card">
     <button class="btn-ghost btn-block" data-act="retire-team">指名終了</button>
-    <p class="note" style="margin-top:6px;">押すと、次の巡以降あなたの球団の指名がスキップされます（取り消し不可）。</p>
+    <p class="note" style="margin-top:6px;">押すと、次の巡以降あなたの球団の指名がスキップされます。取り消しはできません。</p>
   </div>` : ''}
   ${boardToggleHTML()}
   </div>`;
@@ -1558,7 +1563,7 @@ function debugPanelHTML(){
       ? `⚠️ 取得エラー (${g.at}) — ${esc(g.err||'')}`
       : `取得エラー (${g.at}) — この部屋番号がまだ誰にも作成されていない場合は正常な表示です`;
   return `<div class="wrap"><details class="card add-section" id="__dbg" ${dbgPanelOpen?'open':''}>
-    <summary>接続診断情報（不具合報告用）</summary>
+    <summary>接続診断情報</summary>
     <div style="margin-top:10px;font-size:12px;color:var(--muted);line-height:1.9;">
       保存先: Firebase Realtime Database<br>
       部屋番号: <b style="color:var(--text)">${esc(roomCode||'（未設定）')}</b><br>
@@ -1594,10 +1599,36 @@ function appendEscapeFooter(){
   const div=document.createElement('div');
   div.id='__escape-footer';
   div.className='escape-bar';
-  div.innerHTML=`<button data-act="leave-room">自分だけ退出する</button><span class="escape-sep">|</span><button data-act="reset-room">この会議を終了する（全員のデータを削除）</button>`;
+  div.innerHTML=`<button data-act="leave-room">自分だけ退出する</button><span class="escape-sep">|</span><button data-act="reset-room">この会議を終了する</button>`;
   app.appendChild(div);
 }
+/* 再描画で消えないよう、入力欄の内容とフォーカスを引き継ぐ(画面が変わって欄が無くなった場合は引き継がない) */
+const KEEP_INPUT_IDS=['in-roomcode','in-teamcount','in-rounds','in-nick','filter-r1','filter-sn'];
+const FILTER_LIST_IDS={'filter-r1':'r1-list','filter-sn':'sn-list'};
+function captureInputs(){
+  const saved={};
+  KEEP_INPUT_IDS.forEach(id=>{ const el=document.getElementById(id); if(el) saved[id]=el.value; });
+  const a=document.activeElement;
+  const focus=(a && KEEP_INPUT_IDS.includes(a.id)) ? {id:a.id, start:a.selectionStart, end:a.selectionEnd} : null;
+  return {saved, focus};
+}
+function restoreInputs({saved, focus}){
+  Object.entries(saved).forEach(([id,val])=>{
+    const el=document.getElementById(id);
+    if(!el) return;
+    el.value=val;
+    if(FILTER_LIST_IDS[id] && val) filterPlayers(FILTER_LIST_IDS[id], val);
+  });
+  if(focus){
+    const el=document.getElementById(focus.id);
+    if(el){
+      el.focus({preventScroll:true});
+      try{ if(focus.start!=null) el.setSelectionRange(focus.start, focus.end); }catch(e){}
+    }
+  }
+}
 function render(){
+  const kept=captureInputs();
   if(!roomCode){ renderRoomGate(); }
   else if(!state){ renderCreateRoom(); }
   else if(isSpectator){ renderSpectatorView(); }
@@ -1608,6 +1639,7 @@ function render(){
   else if(state.phase==='snake_pick') renderSnakePick();
   else if(state.phase==='round_summary') renderRoundSummary();
   else if(state.phase==='finished') renderFinished();
+  restoreInputs(kept);
   bindGroupToggles();
   appendDebugPanel();
   appendEscapeFooter();
