@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hybrid Memo</title>
+  <meta name="description" content="Obsidian と Notion の良いところを組み合わせたローカルファーストのメモアプリ">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>◆</text></svg>">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <aside id="sidebar"></aside>
+    <div id="scrim"></div>
+    <main id="main"></main>
+  </div>
+  <div id="toasts"></div>
+  <input id="import-input" type="file" accept=".md,.markdown,.txt,.json" multiple hidden>
+  <script src="markdown.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
