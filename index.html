@@ -639,6 +639,7 @@ function finishRound1(){
       : {phase:'finished'};
   }
   state.phase='round_summary';
+  advanceSummaryIfAllAcked(); // 全球団が指名終了していて待つ人がいない場合
 }
 /* 抽選方式: round以降で、指名終了していない参加球団が1つ以上いる最初の巡を探す。いなければnull */
 function resolveNextLotteryRound(round){
@@ -751,6 +752,7 @@ async function submitSnakePick(){
         ? {phase:'finished'}
         : {phase:'snake_pick', round:nextRound};
       state.phase='round_summary';
+      advanceSummaryIfAllAcked(); // 全球団が指名終了していて待つ人がいない場合
     }
     await saveState(); render();
   });
@@ -813,8 +815,58 @@ async function retireTeam(){
       t.retiredFromRound=(state.round||1)+1;
     }
     if(selectedPlayerId && myId.teamId===t.id) selectedPlayerId=null;
+    advanceSummaryIfAllAcked(); // 待つ球団が減って全員揃った(または誰もいなくなった)場合は進める
     await saveState(); render();
   });
+}
+/* 感想会で「次へ」を待つ球団: 担当者がいて、指名終了していない球団(指名終了した球団は次の巡以降の指名がないので待たない) */
+function summaryRequiredTeams(){
+  return state.teams.filter(t=>t.claimedBy && t.retiredFromRound==null);
+}
+function summaryAckedCount(){
+  const rs=state.roundSummary||{acked:{}};
+  return summaryRequiredTeams().filter(t=>rs.acked && rs.acked[t.id]).length;
+}
+/* 半数以上が「次へ」を押したら、残りを待たずに進められる */
+function canSkipSummary(){
+  const total=summaryRequiredTeams().length, acked=summaryAckedCount();
+  return acked<total && acked*2>=total;
+}
+/* 感想会を終えて次の巡(または終了)へ進める。ロック内で呼ぶこと */
+function advanceFromSummary(){
+  const pending = state.pendingAfterSummary || {phase:'finished'};
+  if(pending.phase==='round1_submit'){
+    const nl=resolveNextLotteryRound(pending.round);
+    if(nl){
+      state.phase='round1_submit';
+      state.round=nl.round;
+      state.round1.pendingTeamIds=nl.teamIds;
+      state.round1.submissions={}; state.round1.lotteryQueue=[]; state.round1.currentLottery=null;
+    } else {
+      state.phase='finished';
+    }
+  } else if(pending.phase==='snake_pick'){
+    const next=resolveNextActiveRound(pending.round);
+    if(next){
+      state.phase='snake_pick';
+      state.round=next.round;
+      state.turnIndex=0;
+      state.currentRoundOrder=next.order;
+    } else {
+      state.phase='finished';
+    }
+  } else {
+    state.phase='finished';
+  }
+  state.roundSummary = null;
+  state.pendingAfterSummary = null;
+}
+/* 待つべき球団が全員「次へ」を押していれば進める。ロック内で呼ぶこと */
+function advanceSummaryIfAllAcked(){
+  const rs=state.roundSummary;
+  if(state.phase!=='round_summary' || !rs) return;
+  rs.acked = rs.acked || {};
+  if(summaryRequiredTeams().every(t=>rs.acked[t.id])) advanceFromSummary();
 }
 async function ackRoundSummary(){
   if(!myId) return;
@@ -826,36 +878,21 @@ async function ackRoundSummary(){
     state.roundSummary.acked = state.roundSummary.acked || {};
     if(state.roundSummary.acked[myId.teamId]){ render(); return; }
     state.roundSummary.acked[myId.teamId]=true;
-    const claimedIds = state.teams.filter(t=>t.claimedBy).map(t=>t.id);
-    const allAcked = claimedIds.length>0 && claimedIds.every(tid=>state.roundSummary.acked[tid]);
-    if(allAcked){
-      const pending = state.pendingAfterSummary || {phase:'finished'};
-      if(pending.phase==='round1_submit'){
-        const nl=resolveNextLotteryRound(pending.round);
-        if(nl){
-          state.phase='round1_submit';
-          state.round=nl.round;
-          state.round1.pendingTeamIds=nl.teamIds;
-          state.round1.submissions={}; state.round1.lotteryQueue=[]; state.round1.currentLottery=null;
-        } else {
-          state.phase='finished';
-        }
-      } else if(pending.phase==='snake_pick'){
-        const next=resolveNextActiveRound(pending.round);
-        if(next){
-          state.phase='snake_pick';
-          state.round=next.round;
-          state.turnIndex=0;
-          state.currentRoundOrder=next.order;
-        } else {
-          state.phase='finished';
-        }
-      } else {
-        state.phase='finished';
-      }
-      state.roundSummary = null;
-      state.pendingAfterSummary = null;
-    }
+    advanceSummaryIfAllAcked();
+    await saveState(); render();
+  });
+}
+async function skipRoundSummary(){
+  if(!myId || !state || !state.roundSummary) return;
+  const expectedRound=state.roundSummary.round;
+  if(!(await showConfirm('まだ「次へ」を押していない人を待たずに進みますか？', '進む'))) return;
+  await withRoomLock(async ()=>{
+    await refreshState();
+    if(stateLostGuard()) return;
+    // 確認中に他の端末が進めていた場合(次の感想会に入っていた場合も含む)は何もしない
+    if(state.phase!=='round_summary' || !state.roundSummary || state.roundSummary.round!==expectedRound){ render(); return; }
+    if(!canSkipSummary()){ render(); return; }
+    advanceFromSummary();
     await saveState(); render();
   });
 }
@@ -1120,9 +1157,7 @@ function statusBarHTML(){
     plabel=`${t?teamDisplayName(t):''} の番です`; badge='<span class="badge go">進行中</span>';
   } else if(state.phase==='round_summary'){
     const rs=state.roundSummary||{round:state.round||1, acked:{}};
-    const claimed=state.teams.filter(t=>t.claimedBy);
-    const acked=claimed.filter(t=>rs.acked && rs.acked[t.id]).length;
-    rlabel=rs.round+'巡目'; plabel=`次へ ${acked}/${claimed.length}人`; badge='<span class="badge wait">感想会</span>';
+    rlabel=rs.round+'巡目'; plabel=`次へ ${summaryAckedCount()}/${summaryRequiredTeams().length}人`; badge='<span class="badge wait">感想会</span>';
   } else if(state.phase==='finished'){ rlabel='終了'; plabel='ドラフト会議 完了'; badge='<span class="badge go">FIN</span>'; }
   return `<div class="status-bar"><div><div class="r disp">${rlabel}</div><div class="p">部屋番号: ${esc(roomCode)}｜${plabel}</div></div>${badge}</div>`;
 }
@@ -1459,9 +1494,8 @@ function renderSpectatorView(){
     const round=rs.round;
     const picks=(state.log||[]).filter(l=>l.round===round);
     const claimedTeams=state.teams.filter(t=>t.claimedBy);
-    const ackedCount=claimedTeams.filter(t=>rs.acked && rs.acked[t.id]).length;
     phaseInfo=`<div class="card"><h2>${round}巡目 結果発表・感想会タイム</h2>
-      <p class="sub">全員が「次へ」を押すのを待っています（${ackedCount}/${claimedTeams.length}人）</p>
+      <p class="sub">全員が「次へ」を押すのを待っています（${summaryAckedCount()}/${summaryRequiredTeams().length}人）</p>
       <div class="summary-list">${claimedTeams.map(t=>{
         const pick=picks.find(l=>l.teamId===t.id); const p=pick?playerById(pick.playerId):null;
         return `<div class="summary-row"><span class="s-team">${esc(teamDisplayName(t))}</span><span class="s-player">${p?esc(p.name):'—'}${pick&&pick.method==='lottery'?'<span class="s-lottery">🎯抽選</span>':''}</span></div>`;
@@ -1488,9 +1522,12 @@ function renderRoundSummary(){
   const round=rs.round;
   const picks=(state.log||[]).filter(l=>l.round===round);
   const claimedTeams=state.teams.filter(t=>t.claimedBy);
-  const ackedCount=claimedTeams.filter(t=>rs.acked && rs.acked[t.id]).length;
-  const total=claimedTeams.length;
+  const ackedCount=summaryAckedCount();
+  const total=summaryRequiredTeams().length;
   const myAcked=!!(myId && rs.acked && rs.acked[myId.teamId]);
+  const myRetired=!!(myTeam() && myTeam().retiredFromRound!=null);
+  const skipBtn=(myAcked||myRetired) && canSkipSummary()
+    ? `<button class="btn-ghost btn-block" data-act="skip-round-summary" style="margin-top:10px;">待たずに次へ</button>` : '';
   let html=`${statusBarHTML()}<div class="wrap">
   <div class="card" style="text-align:center;">
     <div class="eyebrow disp">ROUND ${round} RESULTS</div>
@@ -1510,9 +1547,12 @@ function renderRoundSummary(){
     }).join('')}</div>
   </div>
   <div class="card" style="text-align:center;">
-    ${myAcked
+    ${myRetired
+      ? `<p class="sub">指名を終了しています。他の参加者を待っています…（${ackedCount}/${total}人）</p>`
+      : myAcked
       ? `<p class="sub">「次へ」を押しました。他の参加者を待っています…（${ackedCount}/${total}人）</p>`
       : `<button class="btn-gold btn-block" data-act="ack-round-summary">次へ（${ackedCount}/${total}人 完了）</button>`}
+    ${skipBtn}
   </div>
   ${(myId && myTeam() && myTeam().retiredFromRound==null) ? `
   <div class="card">
@@ -1694,6 +1734,7 @@ app.addEventListener('click', (e)=>{
   else if(act==='toggle-board'){ showBoard=!showBoard; render(); }
   else if(act==='reset-room'){ resetRoom(); }
   else if(act==='ack-round-summary'){ ackRoundSummary(); }
+  else if(act==='skip-round-summary'){ skipRoundSummary(); }
   else if(act==='retire-team'){ retireTeam(); }
   else if(act==='download-board'){ downloadBoardImage(); }
 });
