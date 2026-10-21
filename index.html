@@ -189,7 +189,9 @@ input.search{padding-left:40px; background:var(--surface) url("data:image/svg+xm
 .lot-dot{color:var(--gold); font-size:10px; margin-left:3px; vertical-align:middle;}
 
 /* 入室画面 */
+.gate-layout{flex:1; display:flex; flex-direction:column;}
 .gate{flex:1; width:100%; max-width:480px; margin:0 auto; padding:34px 20px 24px;}
+.gate-photo{display:none;}
 .title{font-size:28px; font-weight:800; line-height:1.3; margin:16px 0 6px;}
 .lead{font-size:14px; color:var(--muted); line-height:1.6; margin:0 0 6px;}
 
@@ -231,7 +233,17 @@ input.search{padding-left:40px; background:var(--surface) url("data:image/svg+xm
   .board-scroll{max-height:70vh;}
   .board-table{font-size:13.5px;}
   .gate{padding-top:60px;}
+  /* 入室画面(PC): 左に入力欄、右に写真。写真が読み込めないときは今までどおり中央 */
+  .gate-layout.has-photo{display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);}
+  .gate-layout.has-photo .gate{align-self:center; max-width:440px; padding:40px 28px;}
+  .gate-layout.has-photo .gate-photo{display:block; position:relative; overflow:hidden; background:var(--surface2); min-height:calc(100vh - var(--themebar-h));}
+  .gate-photo img{position:absolute; inset:0; width:100%; height:100%; object-fit:cover; opacity:0; transition:opacity 1.6s ease;}
+  .gate-photo img.on{opacity:1; animation:gate-zoom 24s ease-in-out infinite alternate;}
+  .gate-photo::after{content:""; position:absolute; inset:0; background:linear-gradient(90deg, var(--bg) 0%, transparent 22%); pointer-events:none;}
+  .gate-credit{position:absolute; right:12px; bottom:10px; z-index:1; font-size:11px; color:#fff; text-shadow:0 1px 3px rgba(0,0,0,.6); opacity:.85;}
 }
+@keyframes gate-zoom{from{transform:scale(1);}to{transform:scale(1.12) translateX(-2%);}}
+@media (prefers-reduced-motion:reduce){ .gate-photo img.on{animation:none;} }
 @media (min-width:1200px){
   .page.wide,.page.has-side{max-width:1240px;}
   .page.has-side{grid-template-columns:minmax(0,1fr) 320px;}
@@ -1246,8 +1258,42 @@ function renderPage({main, side, bar, barMobileOnly, wide}){
 }
 
 /* ---------- screens ---------- */
+/* 入室画面(PC幅のみ)に出す写真。複数あれば順に切り替わる。credit は写真の右下に出す出典 */
+const GATE_PHOTOS=[
+  {url:'https://ogre.natalie.mu/media/news/music/2024/0302/sakurazaka46_fukuoka.jpg?impolicy=m&imwidth=750&imdensity=1', credit:'写真：音楽ナタリー'},
+];
+let gatePhotoTimer=null;
+/* 写真はPC幅のときだけ読み込む(スマホでは通信もしない)。読み込めなければ写真の欄を消して中央寄せに戻す */
+function mountGatePhotos(){
+  clearInterval(gatePhotoTimer);
+  const box=document.getElementById('gate-photo');
+  if(!box || GATE_PHOTOS.length===0 || !window.matchMedia('(min-width:768px)').matches) return;
+  const layout=box.parentElement;
+  layout.classList.add('has-photo');
+  box.innerHTML=GATE_PHOTOS.map((p,i)=>`<img src="${esc(p.url)}" alt="" referrerpolicy="no-referrer" data-credit="${esc(p.credit||'')}" class="${i===0?'on':''}">`).join('')+`<span class="gate-credit"></span>`;
+  const credit=box.querySelector('.gate-credit');
+  const showCredit=()=>{ const on=box.querySelector('img.on'); credit.textContent=on?on.dataset.credit:''; };
+  box.querySelectorAll('img').forEach(img=>img.addEventListener('error',()=>{
+    const wasOn=img.classList.contains('on');
+    img.remove();
+    const rest=box.querySelectorAll('img');
+    if(rest.length===0){ clearInterval(gatePhotoTimer); layout.classList.remove('has-photo'); box.innerHTML=''; return; }
+    if(wasOn){ rest[0].classList.add('on'); showCredit(); }
+  }));
+  showCredit();
+  if(GATE_PHOTOS.length>1){
+    gatePhotoTimer=setInterval(()=>{
+      if(!document.body.contains(box)){ clearInterval(gatePhotoTimer); return; }
+      const imgs=[...box.querySelectorAll('img')];
+      if(imgs.length<2) return;
+      const i=imgs.findIndex(x=>x.classList.contains('on'));
+      imgs[i].classList.remove('on'); imgs[(i+1)%imgs.length].classList.add('on');
+      showCredit();
+    }, 7000);
+  }
+}
 function renderRoomGate(){
-  app.innerHTML=`<div class="gate">
+  app.innerHTML=`<div class="gate-layout"><div class="gate">
     <span class="badge">DRAFT</span>
     <div class="title">アイドル<br>ドラフト会議</div>
     <p class="lead">みんなで同じ部屋番号を入れて参加します。</p>
@@ -1257,7 +1303,8 @@ function renderRoomGate(){
     <p class="note">まだ無い番号なら、新しい部屋が作られます。</p>
     <button class="btn" data-act="enter-room" ${presetPlayersLoadError?'disabled':''}>入室する</button>
     <button class="btn line" data-act="enter-room-spectator">観戦する</button>
-  </div>`;
+  </div><aside class="gate-photo" id="gate-photo"></aside></div>`;
+  mountGatePhotos();
 }
 function stepperHTML(id, value, min, max){
   return `<div class="stepper"><button type="button" data-act="step" data-id="${id}:-1" aria-label="減らす">−</button><input type="number" id="${id}" value="${value}" min="${min}" max="${max}" inputmode="numeric"><button type="button" data-act="step" data-id="${id}:1" aria-label="増やす">＋</button></div>`;
