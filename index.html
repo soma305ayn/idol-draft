@@ -237,8 +237,7 @@ input.search{padding-left:40px; background:var(--surface) url("data:image/svg+xm
   .gate-intro .title{font-size:52px; margin-top:20px;}
   .gate-intro .lead{font-size:16px;}
   .gate-feat{display:flex; flex-direction:column; gap:16px; margin-top:36px;}
-  .gate-feat > div{display:flex; align-items:center; gap:14px; font-size:15px; font-weight:700;}
-  .gate-feat i{font-style:normal; flex:none; width:40px; height:40px; border-radius:12px; background:var(--surface); border:1px solid var(--line); display:flex; align-items:center; justify-content:center; font-size:19px;}
+  .gate-feat > div{font-size:15px; font-weight:700; padding-left:14px; border-left:3px solid var(--accent);}
   .gate-feat small{display:block; font-weight:500; color:var(--muted); font-size:12.5px; margin-top:2px;}
   .gate-form-wrap{display:flex; align-items:center; justify-content:center; padding:40px 5vw;}
   .gate-form{width:100%; max-width:420px; background:var(--surface); border:1px solid var(--line); border-radius:20px; padding:30px; box-shadow:0 10px 30px rgba(20,30,60,.06);}
@@ -1265,9 +1264,9 @@ function renderRoomGate(){
       <div class="title">アイドル<br>ドラフト会議</div>
       <p class="lead">みんなで同じ部屋番号を入れて参加します。</p>
       <div class="gate-feat">
-        <div><i>🎯</i><span>同時指名と抽選<small>かぶったら抽選で交渉権を決定</small></span></div>
-        <div><i>🔁</i><span>ウェーバー／全巡 抽選<small>2巡目以降の方式を選べる</small></span></div>
-        <div><i>👀</i><span>観戦・ボード保存<small>結果は画像で残せる</small></span></div>
+        <div>同時指名と抽選<small>かぶったら抽選で交渉権を決定</small></div>
+        <div>ウェーバー／全巡 抽選<small>2巡目以降の方式を選べる</small></div>
+        <div>観戦・ボード保存<small>結果は画像で残せる</small></div>
       </div>
     </div>
     <div class="gate-form-wrap"><div class="gate-form">
@@ -1615,7 +1614,7 @@ function debugPanelHTML(){
   const getLine = g.ok===null ? '未実行'
     : g.ok ? `成功 (${g.at} / ${g.len}文字)`
     : everSaved
-      ? `⚠️ 取得エラー (${g.at}) — ${esc(g.err||'')}`
+      ? `取得エラー (${g.at}) — ${esc(g.err||'')}`
       : `取得エラー (${g.at}) — この部屋番号がまだ誰にも作成されていない場合は正常な表示です`;
   return `<div class="dbg">
       保存先: Firebase Realtime Database<br>
