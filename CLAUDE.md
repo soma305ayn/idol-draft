@@ -34,7 +34,11 @@
 - 指名終了: `retiredFromRound`。巡の途中で押されても進行が止まらないよう、指名順や提出対象から外す。
 - 感想会は、担当者がいて指名終了していない球団の「次へ」を待つ（`summaryRequiredTeams`）。半数以上が押したら「待たずに次へ」で進められる。待つ球団がいなければ自動で進む（`advanceSummaryIfAllAcked`）。
 - 閲覧者モード（`isSpectator`）は読み取り専用。書き込み処理を呼ばない。
-- 画面幅768px以上でPC向けに横幅を広げている（スマホ表示は従来どおり）。
+- 画面幅768px以上でPC向けのレイアウト（選手はカードで複数列、右側にパネル）。スマホ表示が基本。
+- 見た目（task021）: 色はCSS変数。`:root`=白基調、`html[data-theme="dark"]`=黒基調。切り替えは画面下部のスイッチ（`toggleTheme`、`localStorage` の `idol_draft_theme`）。自動切り替えはしない。
+- 画面は `renderPage({main, side, bar})` で組み立てる。`bar`=画面下に固定するボタン欄、`side`=PCで右に出す欄。ヘッダー右のメニュー（`openMenu`）に退出・会議の終了・ボード・接続診断情報。
+- 選手一覧はグループの横並びタブ（`activeGroups` / `applyListView`）。検索欄に文字があれば全グループから絞り込む。
+- クリックは `document` で `data-act` を受けて振り分ける（メニュー等が `#app` の外にあるため）。
 - グループの表示順は `GROUP_ORDER` で固定。
 - ボードの画像保存はCanvas描画（画面のHTMLとは別実装）。表示を変えたらCanvas側も確認する。
 
