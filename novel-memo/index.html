@@ -1,0 +1,742 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>小説メモ</title>
+<style>
+:root{
+  --bg:#fbfaf7; --panel:#f3f0e9; --line:#ddd7cb; --text:#2b2925; --sub:#7a746a;
+  --accent:#8a5a2b; --accent-bg:#f1e4d3; --btn:#fff; --mark:#ffe08a; --mark-cur:#ffab6b;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#1d1c1a; --panel:#262522; --line:#3a3833; --text:#e8e4dc; --sub:#9a948a;
+    --accent:#d9a066; --accent-bg:#3a2f22; --btn:#2e2d2a; --mark:#6e5c1c; --mark-cur:#a5521f;
+  }
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--text);font:14px/1.5 system-ui,"Hiragino Sans","Noto Sans JP","Yu Gothic UI",sans-serif}
+button,input,select{font:inherit;color:inherit}
+button{background:var(--btn);border:1px solid var(--line);border-radius:6px;padding:4px 10px;cursor:pointer;white-space:nowrap}
+button:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+button.small{padding:1px 7px;font-size:12px}
+button:disabled{opacity:.45;cursor:default}
+input[type=text],input[type=search],select{background:var(--btn);border:1px solid var(--line);border-radius:6px;padding:4px 8px;min-width:0}
+.app{display:flex;flex-direction:column;height:100vh}
+header{display:flex;gap:6px;align-items:center;padding:6px 10px;border-bottom:1px solid var(--line);background:var(--panel);flex-wrap:wrap}
+header h1{font-size:15px;margin:0 8px 0 0;color:var(--accent)}
+header .spacer{flex:1}
+header label{display:flex;gap:4px;align-items:center;font-size:13px;color:var(--sub)}
+.body{flex:1;display:flex;min-height:0;position:relative}
+aside{width:230px;flex:none;background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+aside.right{width:300px;border-right:none;border-left:1px solid var(--line)}
+.app.hide-files #files,.app.hide-exprs #exprs{display:none}
+aside h2{font-size:13px;margin:0;padding:8px 10px 4px;color:var(--sub);display:flex;align-items:center;gap:6px}
+aside h2 .grow{flex:1}
+.pad{padding:4px 10px}
+.list{flex:1;overflow:auto;padding:2px 6px 10px}
+.file{display:block;width:100%;text-align:left;border:none;background:none;padding:4px 8px;border-radius:5px;overflow:hidden;text-overflow:ellipsis}
+.file .dir{color:var(--sub);font-size:12px}
+.file.active{background:var(--accent-bg);color:var(--accent);font-weight:bold}
+.empty{color:var(--sub);font-size:13px;padding:10px}
+main{flex:1;display:flex;flex-direction:column;min-width:0}
+.banner{padding:6px 12px;font-size:13px;background:var(--accent-bg);color:var(--accent);border-bottom:1px solid var(--line)}
+.editor-wrap{flex:1;position:relative;min-height:0}
+#editor,#backdrop{
+  position:absolute;inset:0;margin:0;border:0;
+  padding:24px 32px;
+  font-family:var(--ed-font);font-size:var(--ed-size);line-height:var(--ed-lh);
+  white-space:pre-wrap;overflow-wrap:break-word;word-break:normal;
+  letter-spacing:0;tab-size:4;
+  overflow:scroll;
+}
+#backdrop{color:transparent;pointer-events:none;scrollbar-color:transparent transparent;z-index:0}
+#backdrop mark{color:transparent;background:var(--mark);border-radius:2px;padding:0}
+#backdrop mark.cur{background:var(--mark-cur)}
+#editor{background:transparent;color:var(--text);resize:none;outline:none;z-index:1;caret-color:var(--accent)}
+#editor::placeholder{color:var(--sub)}
+.vertical #editor,.vertical #backdrop{writing-mode:vertical-rl;text-orientation:mixed;padding:32px 24px}
+footer{display:flex;gap:14px;align-items:center;padding:4px 12px;border-top:1px solid var(--line);background:var(--panel);font-size:12px;color:var(--sub)}
+footer .path{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#status.dirty{color:var(--accent)}
+#status.error{color:#d33}
+.add{display:flex;flex-direction:column;gap:4px;padding:4px 10px 8px;border-bottom:1px solid var(--line)}
+.add .row{display:flex;gap:4px}
+.add .row input{flex:1}
+.expr{border:1px solid var(--line);background:var(--bg);border-radius:6px;padding:6px 8px;margin:6px 4px}
+.expr .top{display:flex;align-items:center;gap:6px}
+.expr .word{flex:1;font-weight:bold;word-break:break-all;cursor:pointer}
+.expr .count{font-size:12px;color:var(--sub);min-width:2.5em;text-align:right}
+.expr .count.has{color:var(--accent);font-weight:bold}
+.expr .note{font-size:12px;color:var(--sub);margin-top:2px;word-break:break-all}
+.expr .acts{display:flex;gap:4px;margin-top:4px;flex-wrap:wrap}
+.expr.off .word{opacity:.5}
+.results{border-top:1px solid var(--line);max-height:40%;overflow:auto;padding:4px 6px}
+.results:empty{display:none}
+.hit{display:block;width:100%;text-align:left;border:none;background:none;padding:3px 6px;border-radius:5px;font-size:12px}
+.hit:hover{background:var(--accent-bg)}
+.hit b{color:var(--accent)}
+.hit .fn{color:var(--sub)}
+.palette-bg{position:fixed;inset:0;background:rgba(0,0,0,.3);display:none;align-items:flex-start;justify-content:center;padding-top:12vh;z-index:10}
+.palette-bg.open{display:flex}
+.palette{width:min(520px,92vw);background:var(--bg);border:1px solid var(--line);border-radius:10px;box-shadow:0 10px 40px rgba(0,0,0,.25);overflow:hidden}
+.palette input{width:100%;border:none;border-bottom:1px solid var(--line);border-radius:0;padding:12px 14px;font-size:16px;background:var(--bg)}
+.palette input:focus{outline:none}
+.palette ul{list-style:none;margin:0;padding:4px;max-height:50vh;overflow:auto}
+.palette li{padding:6px 10px;border-radius:6px;display:flex;gap:8px;align-items:baseline;cursor:pointer}
+.palette li.sel{background:var(--accent-bg)}
+.palette li .w{font-weight:bold}
+.palette li .n{flex:1;font-size:12px;color:var(--sub);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.palette li .c{font-size:12px;color:var(--sub)}
+.palette .hint{font-size:12px;color:var(--sub);padding:6px 12px;border-top:1px solid var(--line)}
+.toast{position:fixed;left:50%;bottom:40px;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:8px 14px;border-radius:8px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:20}
+.toast.show{opacity:.92}
+@media (max-width:900px){
+  aside{position:absolute;top:0;bottom:0;z-index:5;box-shadow:0 0 20px rgba(0,0,0,.2)}
+  aside#files{left:0}
+  aside.right{right:0;width:min(300px,90vw)}
+  #editor,#backdrop{padding:16px}
+  .vertical #editor,.vertical #backdrop{padding:16px}
+}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <header>
+    <h1>小説メモ</h1>
+    <button data-act="toggleFiles">ファイル</button>
+    <button class="primary" data-act="openFolder" id="btnOpenFolder">フォルダを開く</button>
+    <button data-act="reopen" id="btnReopen" hidden></button>
+    <button data-act="openFile" id="btnOpenFile">ファイルを開く</button>
+    <button data-act="save" id="btnSave">保存</button>
+    <button data-act="download" id="btnDownload" hidden>ダウンロード</button>
+    <span class="spacer"></span>
+    <label>書体
+      <select id="selFont">
+        <option value="mincho">明朝</option>
+        <option value="gothic">ゴシック</option>
+      </select>
+    </label>
+    <label>文字
+      <select id="selSize">
+        <option>14</option><option>16</option><option>18</option><option>20</option><option>24</option>
+      </select>
+    </label>
+    <label><input type="checkbox" id="chkVertical">縦書き</label>
+    <button data-act="palette" title="Ctrl+K">表現を呼び出す</button>
+    <button data-act="toggleExprs">表現</button>
+  </header>
+  <div class="body">
+    <aside id="files">
+      <h2><span class="grow" id="folderName">フォルダ未選択</span>
+        <button class="small" data-act="newFile" id="btnNewFile" disabled>新規</button>
+        <button class="small" data-act="refreshFiles" id="btnRefresh" disabled>更新</button>
+      </h2>
+      <div class="pad"><input type="search" id="fileFilter" placeholder="ファイルを絞り込む" style="width:100%"></div>
+      <div class="list" id="fileList"></div>
+    </aside>
+    <main>
+      <div class="banner" id="banner" hidden></div>
+      <div class="editor-wrap" id="editorWrap">
+        <div id="backdrop" aria-hidden="true"></div>
+        <textarea id="editor" spellcheck="false" placeholder="フォルダを開いてファイルを選ぶと、ここで書いた内容がそのファイルに保存されます。"></textarea>
+      </div>
+    </main>
+    <aside class="right" id="exprs">
+      <h2><span class="grow">気になる表現</span>
+        <label style="font-weight:normal"><input type="checkbox" id="chkHighlight" checked>色付け</label>
+      </h2>
+      <div class="add">
+        <div class="row"><input type="text" id="exprText" placeholder="表現"><button data-act="addExpr">追加</button></div>
+        <input type="text" id="exprNote" placeholder="メモ 例: 多用しない・言い換え候補">
+        <button data-act="addSelection" title="Ctrl+Shift+K">選択中の文字を登録</button>
+      </div>
+      <div class="pad"><input type="search" id="exprFilter" placeholder="表現を絞り込む" style="width:100%"></div>
+      <div class="list" id="exprList"></div>
+      <div class="results" id="results"></div>
+    </aside>
+  </div>
+  <footer>
+    <span class="path" id="filePath">未保存のメモ</span>
+    <span id="charCount">0文字</span>
+    <span id="status">―</span>
+  </footer>
+</div>
+
+<div class="palette-bg" id="paletteBg">
+  <div class="palette">
+    <input type="text" id="paletteInput" placeholder="表現を探す" autocomplete="off">
+    <ul id="paletteList"></ul>
+    <div class="hint">Enter 挿入 ／ Shift+Enter 本文で探す ／ Esc 閉じる</div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+'use strict';
+const $ = s => document.querySelector(s);
+const ta = $('#editor'), bd = $('#backdrop');
+const FS_OK = 'showDirectoryPicker' in window;
+const EXPR_FILE = '.novel-memo-expressions.json';
+const TEXT_EXT = /\.(txt|md|markdown|text)$/i;
+const LS = { exprs:'novelmemo_exprs', settings:'novelmemo_settings', draft:'novelmemo_draft', last:'novelmemo_last' };
+const FONTS = {
+  mincho:'"Hiragino Mincho ProN","Yu Mincho","YuMincho","Noto Serif JP","MS PMincho",serif',
+  gothic:'"Hiragino Sans","Yu Gothic","Noto Sans JP","Meiryo",sans-serif'
+};
+
+const state = {
+  dir:null,          // FileSystemDirectoryHandle
+  files:[],          // [{path, handle}]
+  current:null,      // {path, handle}
+  lastSaved:'',
+  dirty:false,
+  exprs:[],          // [{id, text, note, on}]
+  highlight:true,
+  curMatch:null,     // {s, e}
+  settings:{ font:'mincho', size:'18', vertical:false, hideFiles:false, hideExprs:false }
+};
+
+/* ---------- 小物 ---------- */
+function esc(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function lsGet(k, d){ try{ const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); }catch{ return d; } }
+function lsSet(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch{} }
+let toastTimer;
+function toast(msg){
+  const t = $('#toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 2200);
+}
+function debounce(fn, ms){ let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
+function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+
+/* ---------- IndexedDB（前回のフォルダを覚える） ---------- */
+function idb(){
+  return new Promise((res, rej) => {
+    const r = indexedDB.open('novelmemo', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('kv');
+    r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+  });
+}
+async function idbSet(k, v){
+  const db = await idb();
+  return new Promise((res, rej) => { const t = db.transaction('kv', 'readwrite'); t.objectStore('kv').put(v, k); t.oncomplete = res; t.onerror = () => rej(t.error); });
+}
+async function idbGet(k){
+  const db = await idb();
+  return new Promise((res, rej) => { const r = db.transaction('kv').objectStore('kv').get(k); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+}
+async function ensurePerm(h, ask){
+  if(!h.queryPermission) return true;
+  const o = { mode:'readwrite' };
+  if(await h.queryPermission(o) === 'granted') return true;
+  if(!ask) return false;
+  return (await h.requestPermission(o)) === 'granted';
+}
+
+/* ---------- 設定 ---------- */
+function applySettings(){
+  const s = state.settings;
+  document.documentElement.style.setProperty('--ed-font', FONTS[s.font] || FONTS.mincho);
+  document.documentElement.style.setProperty('--ed-size', s.size + 'px');
+  document.documentElement.style.setProperty('--ed-lh', '1.9');
+  $('#editorWrap').classList.toggle('vertical', !!s.vertical);
+  $('#app').classList.toggle('hide-files', !!s.hideFiles);
+  $('#app').classList.toggle('hide-exprs', !!s.hideExprs);
+  $('#selFont').value = s.font; $('#selSize').value = s.size; $('#chkVertical').checked = !!s.vertical;
+  lsSet(LS.settings, s);
+  renderBackdrop();
+}
+
+/* ---------- 保存状態 ---------- */
+function setDirty(d){
+  state.dirty = d;
+  const st = $('#status');
+  st.className = d ? 'dirty' : '';
+  st.textContent = d ? '未保存' : state.current ? '保存済み' : ta.value ? '端末内に一時保存' : '―';
+}
+function setStatus(text, cls){ const st = $('#status'); st.textContent = text; st.className = cls || ''; }
+function updateFooter(){
+  $('#filePath').textContent = state.current ? (state.dir ? state.dir.name + '/' : '') + state.current.path : '未保存のメモ';
+  const all = ta.value.replace(/\s/g, '').length;
+  const sel = ta.value.slice(ta.selectionStart, ta.selectionEnd).replace(/\s/g, '').length;
+  $('#charCount').textContent = all.toLocaleString() + '文字' + (sel ? '（選択 ' + sel.toLocaleString() + '）' : '');
+}
+
+/* ---------- フォルダとファイル ---------- */
+async function openFolder(){
+  try{
+    const h = await window.showDirectoryPicker({ mode:'readwrite' });
+    await setFolder(h);
+  }catch(e){ if(e.name !== 'AbortError') toast('フォルダを開けませんでした: ' + e.message); }
+}
+async function reopenFolder(){
+  const h = await idbGet('dir').catch(() => null);
+  if(!h) return;
+  try{
+    if(!await ensurePerm(h, true)){ toast('フォルダへの書き込みが許可されませんでした'); return; }
+    await setFolder(h);
+  }catch(e){ toast('前回のフォルダを開けませんでした: ' + e.message); }
+}
+async function setFolder(h){
+  await flushSave();
+  state.dir = h; state.current = null; state.files = [];
+  ta.value = ''; state.lastSaved = ''; state.curMatch = null;
+  try{ await idbSet('dir', h); }catch{}
+  $('#folderName').textContent = h.name;
+  $('#btnNewFile').disabled = false; $('#btnRefresh').disabled = false;
+  $('#btnReopen').hidden = true;
+  await loadExprsFromFolder();
+  await refreshFiles();
+  const last = lsGet(LS.last, null);
+  const entry = last && last.dir === h.name && state.files.find(f => f.path === last.path);
+  if(entry) await openEntry(entry);
+  else { setDirty(false); renderAll(); }
+}
+async function listFiles(dirH, prefix, depth, out){
+  for await (const [name, h] of dirH.entries()){
+    if(name.startsWith('.')) continue;
+    if(h.kind === 'file' && TEXT_EXT.test(name)) out.push({ path:prefix + name, handle:h });
+    else if(h.kind === 'directory' && depth < 3) await listFiles(h, prefix + name + '/', depth + 1, out);
+  }
+  return out;
+}
+async function refreshFiles(){
+  if(!state.dir) return;
+  const files = await listFiles(state.dir, '', 0, []);
+  files.sort((a, b) => a.path.localeCompare(b.path, 'ja', { numeric:true }));
+  // 開いているファイルのハンドルは差し替えない
+  if(state.current){
+    const i = files.findIndex(f => f.path === state.current.path);
+    if(i >= 0) files[i] = state.current;
+  }
+  state.files = files;
+  renderFiles();
+}
+function renderFiles(){
+  const box = $('#fileList');
+  if(!state.dir){
+    box.innerHTML = '<div class="empty">' + (FS_OK
+      ? '「フォルダを開く」で小説のフォルダを選ぶと、中の .txt / .md を直接編集できます。'
+      : 'このブラウザではフォルダを開けません。Chrome か Edge で開いてください。') + '</div>';
+    return;
+  }
+  const q = $('#fileFilter').value.trim().toLowerCase();
+  const list = state.files.filter(f => !q || f.path.toLowerCase().includes(q));
+  if(!list.length){ box.innerHTML = '<div class="empty">' + (q ? '該当なし' : 'テキストファイルがありません。「新規」で作れます。') + '</div>'; return; }
+  box.innerHTML = list.map(f => {
+    const i = f.path.lastIndexOf('/');
+    const dir = i >= 0 ? '<span class="dir">' + esc(f.path.slice(0, i + 1)) + '</span>' : '';
+    const active = state.current && state.current.path === f.path ? ' active' : '';
+    return '<button class="file' + active + '" data-act="openEntry" data-path="' + esc(f.path) + '" title="' + esc(f.path) + '">' + dir + esc(f.path.slice(i + 1)) + '</button>';
+  }).join('');
+}
+async function openEntry(entry){
+  await flushSave();
+  try{
+    const text = await (await entry.handle.getFile()).text();
+    state.current = entry; state.curMatch = null;
+    ta.value = text; state.lastSaved = text;
+    ta.scrollTop = 0; ta.scrollLeft = 0; ta.setSelectionRange(0, 0);
+    setDirty(false);
+    if(state.dir) lsSet(LS.last, { dir:state.dir.name, path:entry.path });
+    renderAll();
+    if(innerWidth <= 900 && !state.settings.hideFiles){ state.settings.hideFiles = true; applySettings(); }
+    ta.focus({ preventScroll:true });
+  }catch(e){ toast('読み込めませんでした: ' + e.message); }
+}
+async function openSingleFile(){
+  if(!FS_OK){ $('#fileInput').click(); return; }
+  try{
+    const [h] = await window.showOpenFilePicker({ types:[{ description:'テキスト', accept:{ 'text/plain':['.txt', '.md', '.markdown', '.text'] } }] });
+    if(!await ensurePerm(h, true)){ toast('書き込みが許可されませんでした'); return; }
+    await openEntry({ path:h.name, handle:h });
+  }catch(e){ if(e.name !== 'AbortError') toast('開けませんでした: ' + e.message); }
+}
+async function newFile(){
+  if(!state.dir) return;
+  let name = prompt('ファイル名', '新しいメモ.txt');
+  if(!name) return;
+  name = name.trim().replace(/[\\/:*?"<>|]/g, '_');
+  if(!name) return;
+  if(!TEXT_EXT.test(name)) name += '.txt';
+  try{
+    const exists = state.files.find(f => f.path === name);
+    if(exists){ await openEntry(exists); toast('同じ名前のファイルを開きました'); return; }
+    const h = await state.dir.getFileHandle(name, { create:true });
+    const entry = { path:name, handle:h };
+    await flushSave();
+    await refreshFiles();
+    await openEntry(state.files.find(f => f.path === name) || entry);
+  }catch(e){ toast('作れませんでした: ' + e.message); }
+}
+
+/* ---------- 保存 ---------- */
+let saveTimer = null, saving = null;
+function scheduleSave(){ clearTimeout(saveTimer); saveTimer = setTimeout(save, 800); }
+async function save(){
+  clearTimeout(saveTimer);
+  while(saving) await saving;
+  if(!state.current){ lsSet(LS.draft, ta.value); setDirty(false); return; }
+  const cur = state.current, text = ta.value;
+  if(text === state.lastSaved){ setDirty(false); return; }
+  setStatus('保存中…', 'dirty');
+  saving = (async () => {
+    const w = await cur.handle.createWritable();
+    await w.write(text);
+    await w.close();
+  })();
+  try{
+    await saving;
+    if(state.current === cur){ state.lastSaved = text; setDirty(ta.value !== text); if(state.dirty) scheduleSave(); }
+  }catch(e){
+    setStatus('保存できませんでした', 'error');
+    toast('保存できませんでした: ' + e.message);
+  }finally{ saving = null; }
+}
+async function flushSave(){ if(state.dirty || saving) await save(); }
+function download(){
+  const name = state.current ? state.current.path.split('/').pop() : 'メモ.txt';
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([ta.value], { type:'text/plain' }));
+  a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+/* ---------- 気になる表現 ---------- */
+function findAll(text, word){
+  const res = [];
+  if(!word) return res;
+  for(let i = text.indexOf(word); i !== -1; i = text.indexOf(word, i + word.length)) res.push(i);
+  return res;
+}
+function normalizeExprs(arr){
+  if(!Array.isArray(arr)) return [];
+  return arr.filter(x => x && typeof x.text === 'string' && x.text)
+    .map(x => ({ id:x.id || uid(), text:x.text, note:typeof x.note === 'string' ? x.note : '', on:x.on !== false }));
+}
+function mergeExprs(a, b){
+  const out = [...a];
+  for(const x of b) if(!out.some(y => y.text === x.text)) out.push(x);
+  return out;
+}
+const writeExprFile = debounce(async () => {
+  if(!state.dir) return;
+  try{
+    const h = await state.dir.getFileHandle(EXPR_FILE, { create:true });
+    const w = await h.createWritable();
+    await w.write(JSON.stringify(state.exprs.map(({ text, note, on }) => ({ text, note, on })), null, 2));
+    await w.close();
+  }catch(e){ toast('表現リストを保存できませんでした: ' + e.message); }
+}, 500);
+function saveExprs(){ lsSet(LS.exprs, state.exprs); writeExprFile(); }
+async function loadExprsFromFolder(){
+  try{
+    const h = await state.dir.getFileHandle(EXPR_FILE);
+    const arr = normalizeExprs(JSON.parse(await (await h.getFile()).text()));
+    state.exprs = mergeExprs(arr, state.exprs);
+  }catch{ /* まだ無い */ }
+  saveExprs();
+}
+function addExpr(text, note){
+  text = (text || '').replace(/\r\n?/g, '\n');
+  if(!text.trim()){ toast('表現を入力してください'); return false; }
+  const ex = state.exprs.find(x => x.text === text);
+  if(ex){
+    if(note && !ex.note) ex.note = note;
+    toast('「' + text + '」は登録済みです');
+  }else{
+    state.exprs.unshift({ id:uid(), text, note:note || '', on:true });
+    toast('「' + text + '」を登録しました');
+  }
+  saveExprs(); renderExprs(); renderBackdrop();
+  return true;
+}
+function addFromInputs(){
+  if(addExpr($('#exprText').value, $('#exprNote').value.trim())){ $('#exprText').value = ''; $('#exprNote').value = ''; }
+}
+function addSelection(){
+  const s = ta.value.slice(ta.selectionStart, ta.selectionEnd);
+  if(!s){ toast('本文で文字を選んでから押してください'); return; }
+  addExpr(s, '');
+}
+function exprById(id){ return state.exprs.find(x => x.id === id); }
+function renderExprs(){
+  const q = $('#exprFilter').value.trim().toLowerCase();
+  const text = ta.value;
+  const list = state.exprs.filter(x => !q || x.text.toLowerCase().includes(q) || x.note.toLowerCase().includes(q));
+  const box = $('#exprList');
+  if(!state.exprs.length){ box.innerHTML = '<div class="empty">気になる表現を登録すると、本文中で色が付き、すぐに呼び出せます。</div>'; return; }
+  if(!list.length){ box.innerHTML = '<div class="empty">該当なし</div>'; return; }
+  box.innerHTML = list.map(x => {
+    const n = findAll(text, x.text).length;
+    return '<div class="expr' + (x.on ? '' : ' off') + '" data-id="' + x.id + '">' +
+      '<div class="top">' +
+        '<input type="checkbox" data-act="toggleExpr" title="色付け"' + (x.on ? ' checked' : '') + '>' +
+        '<span class="word" data-act="insertExpr" title="クリックで挿入">' + esc(x.text) + '</span>' +
+        '<span class="count' + (n ? ' has' : '') + '">' + n + '件</span>' +
+      '</div>' +
+      (x.note ? '<div class="note">' + esc(x.note) + '</div>' : '') +
+      '<div class="acts">' +
+        '<button class="small" data-act="insertExpr">挿入</button>' +
+        '<button class="small" data-act="prevExpr"' + (n ? '' : ' disabled') + '>前</button>' +
+        '<button class="small" data-act="nextExpr"' + (n ? '' : ' disabled') + '>次</button>' +
+        '<button class="small" data-act="searchAll"' + (state.dir ? '' : ' disabled') + '>全ファイル</button>' +
+        '<button class="small" data-act="editExpr">編集</button>' +
+        '<button class="small" data-act="deleteExpr">削除</button>' +
+      '</div></div>';
+  }).join('');
+}
+function insertText(s){
+  ta.focus({ preventScroll:true });
+  if(!document.execCommand || !document.execCommand('insertText', false, s)){
+    ta.setRangeText(s, ta.selectionStart, ta.selectionEnd, 'end');
+    onEdit();
+  }
+}
+function jump(x, dir){
+  const pos = findAll(ta.value, x.text);
+  if(!pos.length){ toast('「' + x.text + '」は本文にありません'); return; }
+  const from = ta.selectionStart;
+  let p = dir > 0 ? pos.find(i => i > from) : [...pos].reverse().find(i => i < from);
+  if(p === undefined) p = dir > 0 ? pos[0] : pos[pos.length - 1];
+  selectRange(p, p + x.text.length);
+  const k = pos.indexOf(p) + 1;
+  toast('「' + x.text + '」 ' + k + ' / ' + pos.length);
+}
+function selectRange(s, e){
+  ta.focus({ preventScroll:true });
+  ta.setSelectionRange(s, e);
+  state.curMatch = { s, e };
+  renderBackdrop();
+  const m = bd.querySelector('mark.cur');
+  if(m){
+    const mr = m.getBoundingClientRect(), br = ta.getBoundingClientRect();
+    if(state.settings.vertical) ta.scrollLeft += (mr.left + mr.width / 2) - (br.left + ta.clientWidth / 2);
+    else ta.scrollTop += (mr.top + mr.height / 2) - (br.top + ta.clientHeight / 2);
+    syncScroll();
+  }
+  updateFooter();
+}
+async function searchAll(x){
+  if(!state.dir) return;
+  const box = $('#results');
+  box.innerHTML = '<div class="empty">検索中…</div>';
+  const hits = [];
+  for(const f of state.files){
+    let text;
+    try{ text = state.current && state.current.path === f.path ? ta.value : await (await f.handle.getFile()).text(); }catch{ continue; }
+    for(const p of findAll(text, x.text)){
+      const a = Math.max(0, p - 15), b = Math.min(text.length, p + x.text.length + 15);
+      hits.push({ path:f.path, pos:p,
+        html:esc(text.slice(a, p).replace(/\s+/g, ' ')) + '<b>' + esc(x.text) + '</b>' + esc(text.slice(p + x.text.length, b).replace(/\s+/g, ' ')) });
+    }
+  }
+  if(!hits.length){ box.innerHTML = '<div class="empty">「' + esc(x.text) + '」はどのファイルにもありません</div>'; return; }
+  box.innerHTML = '<div class="empty" style="padding:4px 6px">「' + esc(x.text) + '」 ' + hits.length + '件 <button class="small" data-act="closeResults">閉じる</button></div>' +
+    hits.slice(0, 300).map(h => '<button class="hit" data-act="openHit" data-path="' + esc(h.path) + '" data-pos="' + h.pos + '" data-len="' + x.text.length + '"><span class="fn">' + esc(h.path) + '</span><br>' + h.html + '</button>').join('');
+}
+
+/* ---------- 色付け（textareaの裏に同じ文字を敷く） ---------- */
+function computeRanges(text){
+  const ranges = [];
+  if(state.highlight){
+    for(const x of state.exprs){
+      if(!x.on) continue;
+      for(const p of findAll(text, x.text)) ranges.push({ s:p, e:p + x.text.length });
+    }
+  }
+  const cm = state.curMatch;
+  if(cm && cm.e <= text.length) ranges.push({ s:cm.s, e:cm.e, cur:true });
+  ranges.sort((a, b) => a.s - b.s || (b.cur ? 1 : 0) - (a.cur ? 1 : 0) || (b.e - b.s) - (a.e - a.s));
+  const out = [];
+  for(const r of ranges){
+    const last = out[out.length - 1];
+    if(last && r.s < last.e){
+      if(r.cur){ // 現在位置を優先して重なりを差し替える
+        while(out.length && out[out.length - 1].e > r.s && out[out.length - 1].s >= r.s) out.pop();
+        const l = out[out.length - 1];
+        if(l && l.e > r.s) l.e = r.s;
+        out.push(r);
+      }
+      continue;
+    }
+    out.push(r);
+  }
+  return out;
+}
+function renderBackdrop(){
+  const text = ta.value;
+  let html = '', pos = 0;
+  for(const r of computeRanges(text)){
+    if(r.s < pos) continue;
+    html += esc(text.slice(pos, r.s)) + '<mark' + (r.cur ? ' class="cur"' : '') + '>' + esc(text.slice(r.s, r.e)) + '</mark>';
+    pos = r.e;
+  }
+  bd.innerHTML = html + esc(text.slice(pos)) + '\n​';
+  syncScroll();
+}
+function syncScroll(){ bd.scrollTop = ta.scrollTop; bd.scrollLeft = ta.scrollLeft; }
+
+/* ---------- 呼び出しパレット ---------- */
+const pal = { open:false, items:[], sel:0 };
+function openPalette(){
+  pal.open = true; $('#paletteBg').classList.add('open');
+  pal.restore = { s:ta.selectionStart, e:ta.selectionEnd };
+  const inp = $('#paletteInput'); inp.value = ''; renderPalette(); inp.focus();
+}
+function closePalette(refocus){
+  pal.open = false; $('#paletteBg').classList.remove('open');
+  if(refocus){ ta.focus({ preventScroll:true }); if(pal.restore) ta.setSelectionRange(pal.restore.s, pal.restore.e); }
+}
+function renderPalette(){
+  const q = $('#paletteInput').value.trim().toLowerCase();
+  const text = ta.value;
+  pal.items = state.exprs.filter(x => !q || x.text.toLowerCase().includes(q) || x.note.toLowerCase().includes(q))
+    .map(x => ({ x, n:findAll(text, x.text).length }));
+  if(q && !state.exprs.some(x => x.text.toLowerCase() === q)) pal.items.push({ add:$('#paletteInput').value.trim() });
+  pal.sel = Math.min(pal.sel, Math.max(0, pal.items.length - 1));
+  $('#paletteList').innerHTML = pal.items.length ? pal.items.map((it, i) =>
+    '<li data-i="' + i + '"' + (i === pal.sel ? ' class="sel"' : '') + '>' + (it.add
+      ? '<span class="w">「' + esc(it.add) + '」を登録</span><span class="n"></span>'
+      : '<span class="w">' + esc(it.x.text) + '</span><span class="n">' + esc(it.x.note) + '</span><span class="c">' + it.n + '件</span>') + '</li>'
+  ).join('') : '<li class="n">表現がまだありません。文字を入れて Enter で登録できます。</li>';
+  const sel = $('#paletteList li.sel'); if(sel) sel.scrollIntoView({ block:'nearest' });
+}
+function runPalette(i, jumpMode){
+  const it = pal.items[i]; if(!it) return;
+  if(it.add){ addExpr(it.add, ''); $('#paletteInput').value = ''; renderPalette(); return; }
+  closePalette(true);
+  if(jumpMode) jump(it.x, 1); else insertText(it.x.text);
+}
+
+/* ---------- 全体描画 ---------- */
+function renderAll(){ renderFiles(); renderExprs(); renderBackdrop(); updateFooter(); }
+const lightRender = debounce(() => { renderBackdrop(); renderExprs(); }, 150);
+function onEdit(){
+  state.curMatch = null;
+  setDirty(ta.value !== state.lastSaved || !state.current);
+  scheduleSave();
+  updateFooter();
+  // 文字の位置ずれを防ぐため、裏の文字だけはすぐ合わせる
+  if(ta.value.length < 30000) renderBackdrop();
+  lightRender();
+}
+
+/* ---------- イベント ---------- */
+ta.addEventListener('input', onEdit);
+ta.addEventListener('scroll', syncScroll);
+ta.addEventListener('select', updateFooter);
+ta.addEventListener('keyup', updateFooter);
+ta.addEventListener('mouseup', updateFooter);
+ta.addEventListener('keydown', e => {
+  if(e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey){ e.preventDefault(); insertText('　'); }
+});
+new ResizeObserver(() => renderBackdrop()).observe(ta);
+
+const ACTS = {
+  toggleFiles(){ state.settings.hideFiles = !state.settings.hideFiles; if(!state.settings.hideFiles && innerWidth <= 900) state.settings.hideExprs = true; applySettings(); },
+  toggleExprs(){ state.settings.hideExprs = !state.settings.hideExprs; if(!state.settings.hideExprs && innerWidth <= 900) state.settings.hideFiles = true; applySettings(); },
+  openFolder, openFile:openSingleFile, reopen:reopenFolder, newFile, refreshFiles,
+  save(){ save().then(() => { if(!state.current && FS_OK) toast('フォルダを開いてファイルを選ぶか、「ファイルを開く」を使ってください'); }); },
+  download, palette:openPalette, addExpr:addFromInputs, addSelection,
+  openEntry(el){ const f = state.files.find(f => f.path === el.dataset.path); if(f) openEntry(f); },
+  toggleExpr(el, x){ x.on = el.checked; saveExprs(); renderExprs(); renderBackdrop(); },
+  insertExpr(el, x){ insertText(x.text); },
+  nextExpr(el, x){ jump(x, 1); },
+  prevExpr(el, x){ jump(x, -1); },
+  searchAll(el, x){ searchAll(x); },
+  editExpr(el, x){
+    const t = prompt('表現', x.text); if(t == null) return;
+    if(!t.trim()){ toast('空にはできません'); return; }
+    const n = prompt('メモ', x.note); if(n == null) return;
+    if(t !== x.text && state.exprs.some(y => y !== x && y.text === t)){ toast('同じ表現が登録済みです'); return; }
+    x.text = t; x.note = n.trim(); saveExprs(); renderExprs(); renderBackdrop();
+  },
+  deleteExpr(el, x){ if(!confirm('「' + x.text + '」を削除しますか？')) return; state.exprs = state.exprs.filter(y => y !== x); saveExprs(); renderExprs(); renderBackdrop(); },
+  closeResults(){ $('#results').innerHTML = ''; },
+  async openHit(el){
+    const f = state.files.find(f => f.path === el.dataset.path); if(!f) return;
+    if(!state.current || state.current.path !== f.path) await openEntry(f);
+    const p = +el.dataset.pos, len = +el.dataset.len;
+    if(ta.value.length >= p + len) selectRange(p, p + len);
+  }
+};
+document.addEventListener('click', e => {
+  const el = e.target.closest('[data-act]'); if(!el) return;
+  const fn = ACTS[el.dataset.act]; if(!fn) return;
+  const card = el.closest('.expr');
+  const x = card ? exprById(card.dataset.id) : null;
+  if(card && !x) return;
+  fn(el, x);
+});
+document.addEventListener('keydown', e => {
+  const mod = e.ctrlKey || e.metaKey;
+  if(mod && !e.shiftKey && e.key.toLowerCase() === 's'){ e.preventDefault(); ACTS.save(); }
+  else if(mod && e.shiftKey && e.key.toLowerCase() === 'k'){ e.preventDefault(); addSelection(); }
+  else if(mod && !e.shiftKey && e.key.toLowerCase() === 'k'){ e.preventDefault(); pal.open ? closePalette(true) : openPalette(); }
+});
+$('#exprText').addEventListener('keydown', e => { if(e.key === 'Enter' && !e.isComposing){ e.preventDefault(); addFromInputs(); } });
+$('#exprNote').addEventListener('keydown', e => { if(e.key === 'Enter' && !e.isComposing){ e.preventDefault(); addFromInputs(); } });
+$('#exprFilter').addEventListener('input', renderExprs);
+$('#fileFilter').addEventListener('input', renderFiles);
+$('#chkHighlight').addEventListener('change', e => { state.highlight = e.target.checked; lsSet('novelmemo_highlight', state.highlight); renderBackdrop(); });
+$('#selFont').addEventListener('change', e => { state.settings.font = e.target.value; applySettings(); });
+$('#selSize').addEventListener('change', e => { state.settings.size = e.target.value; applySettings(); });
+$('#chkVertical').addEventListener('change', e => { state.settings.vertical = e.target.checked; applySettings(); });
+
+$('#paletteInput').addEventListener('input', () => { pal.sel = 0; renderPalette(); });
+$('#paletteInput').addEventListener('keydown', e => {
+  if(e.isComposing) return;
+  if(e.key === 'ArrowDown'){ e.preventDefault(); pal.sel = Math.min(pal.sel + 1, pal.items.length - 1); renderPalette(); }
+  else if(e.key === 'ArrowUp'){ e.preventDefault(); pal.sel = Math.max(pal.sel - 1, 0); renderPalette(); }
+  else if(e.key === 'Enter'){ e.preventDefault(); runPalette(pal.sel, e.shiftKey); }
+  else if(e.key === 'Escape'){ e.preventDefault(); closePalette(true); }
+});
+$('#paletteList').addEventListener('click', e => { const li = e.target.closest('li[data-i]'); if(li) runPalette(+li.dataset.i, e.shiftKey); });
+$('#paletteBg').addEventListener('mousedown', e => { if(e.target === e.currentTarget) closePalette(true); });
+
+window.addEventListener('beforeunload', e => {
+  if(!state.current){ if(state.dirty) lsSet(LS.draft, ta.value); return; }
+  if(state.dirty){ save(); e.preventDefault(); e.returnValue = ''; }
+});
+document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'hidden') flushSave(); });
+
+/* ---------- 起動 ---------- */
+(async function init(){
+  Object.assign(state.settings, lsGet(LS.settings, {}));
+  if(innerWidth <= 900){ state.settings.hideFiles = true; state.settings.hideExprs = true; }
+  state.exprs = normalizeExprs(lsGet(LS.exprs, []));
+  state.highlight = lsGet('novelmemo_highlight', true) !== false;
+  $('#chkHighlight').checked = state.highlight;
+  if(!FS_OK){
+    const b = $('#banner'); b.hidden = false;
+    b.textContent = 'このブラウザはファイルへの直接保存に未対応です。Chrome か Edge で開いてください。いまは端末内に一時保存しています。';
+    $('#btnOpenFolder').hidden = true; $('#btnDownload').hidden = false;
+    const inp = document.createElement('input');
+    inp.type = 'file'; inp.id = 'fileInput'; inp.accept = '.txt,.md,.markdown,.text,text/plain'; inp.hidden = true;
+    inp.addEventListener('change', async () => {
+      const f = inp.files[0]; if(!f) return;
+      ta.value = await f.text(); onEdit(); inp.value = '';
+    });
+    document.body.appendChild(inp);
+    ta.placeholder = 'ここに書いた内容は端末内に一時保存されます。';
+  }else{
+    try{
+      const h = await idbGet('dir');
+      if(h){
+        if(await ensurePerm(h, false)) await setFolder(h);
+        else { const b = $('#btnReopen'); b.hidden = false; b.textContent = '前回の「' + h.name + '」を開く'; }
+      }
+    }catch{}
+  }
+  if(!state.current) ta.value = lsGet(LS.draft, '') || '';
+  applySettings();
+  setDirty(false);
+  renderAll();
+})();
+</script>
+</body>
+</html>
