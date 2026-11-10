@@ -197,6 +197,14 @@ input.search{padding-left:40px; background:var(--surface) url("data:image/svg+xm
 /* トースト・モーダル・メニュー */
 .toast{position:fixed; left:50%; bottom:calc(var(--themebar-h) + 90px); transform:translateX(-50%); background:var(--text); color:var(--bg); padding:12px 18px; border-radius:12px; font-size:13.5px; max-width:88%; box-shadow:0 8px 24px rgba(0,0,0,.25); z-index:300; text-align:center; opacity:0; transition:opacity .2s ease; pointer-events:none;}
 .toast.show{opacity:1;}
+/* 通信中の表示: 上部の細い帯と、押したボタンのくるくる */
+.netbar{position:fixed; top:0; left:0; right:0; height:3px; z-index:400; overflow:hidden; opacity:0; transition:opacity .2s ease; pointer-events:none;}
+.netbar.show{opacity:1;}
+.netbar::before{content:""; position:absolute; top:0; bottom:0; left:-40%; width:40%; background:var(--accent); animation:netbar 1s ease-in-out infinite;}
+@keyframes netbar{from{left:-40%;}to{left:100%;}}
+.is-busy{opacity:.65; pointer-events:none;}
+.btn.is-busy::after{content:""; display:inline-block; width:14px; height:14px; margin-left:8px; vertical-align:-2px; border:2px solid currentColor; border-right-color:transparent; border-radius:50%; animation:spin .7s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg);}}
 .modal-overlay{position:fixed; inset:0; background:var(--overlay); display:flex; align-items:center; justify-content:center; z-index:200; padding:20px;}
 .modal-box{background:var(--surface); color:var(--text); border-radius:18px; padding:22px 20px 18px; max-width:360px; width:100%; box-shadow:0 20px 40px rgba(0,0,0,.3);}
 .modal-box p{font-size:15.5px; font-weight:700; line-height:1.6; margin:0 0 18px;}
@@ -297,56 +305,99 @@ function roomUrl(){ return `${FIREBASE_URL}/rooms/${encodeURIComponent(roomCode)
 function identityKey(){ return `idol_draft_identity:${roomCode}`; }
 function lockUrl(){ return `${FIREBASE_URL}/locks/${encodeURIComponent(roomCode)}.json`; }
 const LOCK_TIMEOUT_MS=15000;
+const FETCH_TIMEOUT_MS=7000;
+/* 通信に待ち時間の上限を付ける(電波が悪いと応答が返らず、ボタンが無反応のままになるため) */
+function fetchT(url, opts){
+  const ctrl=new AbortController();
+  const timer=setTimeout(()=>ctrl.abort(), FETCH_TIMEOUT_MS);
+  return fetch(url, {...(opts||{}), signal:ctrl.signal}).finally(()=>clearTimeout(timer));
+}
 
 /* 排他ロック取得: if-none-match:'*' はレスポンスヘッダーの読み取りに依存せず、
    ステータスコード(412=既にロックあり)だけで判定できるため確実に動作する */
 async function tryAcquireLock(token){
   try{
-    const res=await fetch(lockUrl(), {
+    const res=await fetchT(lockUrl(), {
       method:'PUT',
       headers:{'Content-Type':'application/json','if-none-match':'*'},
       body:JSON.stringify({token, ts:Date.now()})
     });
     if(res.ok) return true;
     if(res.status===412){
-      // 既存ロックが古すぎる(操作中に落ちた等)場合は期限切れとみなして奪取
       try{
-        const cur=await fetch(lockUrl());
+        const cur=await fetchT(lockUrl(), {headers:{'X-Firebase-ETag':'true'}});
         const text=await cur.text();
         const data=(text && text!=='null') ? JSON.parse(text) : null;
-        if(!data || (Date.now()-data.ts) > LOCK_TIMEOUT_MS){
-          const force=await fetch(lockUrl(), {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({token, ts:Date.now()})});
+        // ちょうど解放された直後なら、無理に上書きせず取り直す(上書きすると複数の端末が同時にロックを持ってしまう)
+        if(!data) return false;
+        // 既存ロックが古すぎる(操作中に落ちた等)場合は期限切れとみなして奪取。
+        // ETagが読めれば「見たときのまま」の場合だけ上書きするので、同時に奪いに来ても1台だけが成功する
+        if((Date.now()-data.ts) > LOCK_TIMEOUT_MS){
+          const etag=cur.headers.get('ETag');
+          const headers={'Content-Type':'application/json'};
+          if(etag) headers['if-match']=etag;
+          const force=await fetchT(lockUrl(), {method:'PUT', headers, body:JSON.stringify({token, ts:Date.now()})});
           return force.ok;
         }
       }catch(e){}
       return false;
     }
     return false;
-  }catch(e){ return false; }
+  }catch(e){
+    // 応答が返らなかっただけで、ロック自体は取れている場合がある。自分のロックなら消しておく(残ると15秒間だれも操作できない)。
+    // 消す処理は待たずに裏で行い、呼び出し元にはすぐ「通信できなかった」と返す
+    (async ()=>{
+      try{
+        const cur=await fetchT(lockUrl());
+        const text=await cur.text();
+        const data=(text && text!=='null') ? JSON.parse(text) : null;
+        if(data && data.token===token) await fetchT(lockUrl(), {method:'DELETE'});
+      }catch(e2){}
+    })();
+    return 'offline';
+  }
 }
 async function releaseLock(){
-  try{ await fetch(lockUrl(), {method:'DELETE'}); }catch(e){}
+  try{ await fetchT(lockUrl(), {method:'DELETE'}); }catch(e){}
 }
-/* 状態を書き換える操作は必ずこれで包み、同時操作による上書き事故を防ぐ */
+const LOCK_WAIT_MS=20000;
+let lockDepth=0; // 自分の端末で書き込み中の操作の数
+/* 状態を書き換える操作は必ずこれで包み、同時操作による上書き事故を防ぐ。
+   大勢が同時に押しても失敗しないよう、ロックが空くまで最大20秒、少しずつ間隔をずらしながら取り直す。
+   通信そのものができなかったときは、待たずにすぐ知らせる */
 async function withRoomLock(fn){
   const token=uid('lock');
-  let acquired=false, attempts=0;
-  for(let attempt=0; attempt<3 && !acquired; attempt++){
-    attempts=attempt+1;
-    acquired=await tryAcquireLock(token);
-    if(!acquired) await new Promise(r=>setTimeout(r, 300+Math.random()*300));
-  }
-  dbg.lastLock={ok:acquired, at:nowStr(), attempts};
-  if(!acquired){
-    showToast('他の操作と混み合っています。少し待ってからもう一度お試しください。');
-    await refreshState(); render();
-    return false;
-  }
+  let acquired=false, attempts=0, offline=false;
+  const started=Date.now();
+  lockDepth++; setNetBusy(+1);
   try{
-    await fn();
-    return true;
+    while(true){
+      attempts++;
+      const r=await tryAcquireLock(token);
+      if(r==='offline'){ offline=true; break; }
+      acquired=r;
+      if(acquired || Date.now()-started>LOCK_WAIT_MS) break;
+      await new Promise(r=>setTimeout(r, 120+Math.random()*300));
+    }
+    dbg.lastLock={ok:acquired, at:nowStr(), attempts};
+    if(offline){
+      showToast('通信できませんでした。電波の良い場所でもう一度お試しください。');
+      render();
+      return false;
+    }
+    if(!acquired){
+      showToast('他の操作と混み合っています。少し待ってからもう一度お試しください。');
+      await refreshState(); render();
+      return false;
+    }
+    try{
+      await fn();
+      return true;
+    } finally {
+      await releaseLock();
+    }
   } finally {
-    await releaseLock();
+    lockDepth--; setNetBusy(-1);
   }
 }
 
@@ -360,6 +411,16 @@ const dbg={
 };
 function nowStr(){ return new Date().toLocaleTimeString('ja-JP'); }
 
+let netBusyCount=0, netbarTimer=null;
+/* 通信中は画面上部に細い帯を出す(押したのに何も起きていないように見えないように) */
+function setNetBusy(d){
+  netBusyCount=Math.max(0, netBusyCount+d);
+  const bar=document.getElementById('__netbar');
+  if(!bar) return;
+  clearTimeout(netbarTimer);
+  if(netBusyCount>0) netbarTimer=setTimeout(()=>bar.classList.add('show'), 200);
+  else bar.classList.remove('show');
+}
 let toastTimer=null;
 function showToast(msg){
   let el=document.getElementById('__toast');
@@ -440,12 +501,14 @@ function normalizeState(s){
   return s;
 }
 let currentEtag=null;
+let stateSeq=0; // 自分で読み込み・保存するたびに増やす番号。古いポーリング結果で画面を戻さないために使う
 async function refreshState(){
   if(!roomCode){ state=null; currentEtag=null; return; }
   try{
-    const res=await fetch(roomUrl(), {headers:{'Accept':'application/json','X-Firebase-ETag':'true'}});
+    const res=await fetchT(roomUrl(), {headers:{'Accept':'application/json','X-Firebase-ETag':'true'}});
     if(!res.ok) throw new Error(`HTTP ${res.status}`);
     const text=await res.text();
+    stateSeq++;
     state = (text && text!=='null') ? normalizeState(JSON.parse(text)) : null;
     lastStateStr = text;
     currentEtag = res.headers.get('ETag');
@@ -463,7 +526,7 @@ async function saveState(){
     const body=JSON.stringify(state);
     const headers={'Content-Type':'application/json','X-Firebase-ETag':'true'};
     if(currentEtag) headers['if-match']=currentEtag;
-    const res=await fetch(roomUrl(), {method:'PUT', headers, body});
+    const res=await fetchT(roomUrl(), {method:'PUT', headers, body});
     if(res.status===412){
       dbg.lastSet={ok:false, at:nowStr(), len:null, err:'競合(412): 他の端末が先に更新しました'};
       showToast('他の操作と競合したため保存を中断し、最新の状態を取得しました。もう一度お試しください。');
@@ -472,6 +535,7 @@ async function saveState(){
       return false;
     }
     if(!res.ok) throw new Error(`HTTP ${res.status}`);
+    stateSeq++;
     lastStateStr=body;
     const newEtag=res.headers.get('ETag');
     if(newEtag) currentEtag=newEtag;
@@ -483,20 +547,26 @@ async function saveState(){
     return false;
   }
 }
+let pollInFlight=false;
 async function pollLoop(){
-  if(!roomCode) return;
+  // 前回の読み込みがまだ終わっていない時と、自分の書き込み中は読み込まない(古い状態で画面が戻るのを防ぐ)
+  if(!roomCode || pollInFlight || lockDepth>0) return;
+  pollInFlight=true;
+  const seqAtStart=stateSeq;
   dbg.pollCount++;
   try{
-    const res=await fetch(roomUrl(), {headers:{'Accept':'application/json','X-Firebase-ETag':'true'}});
+    const res=await fetchT(roomUrl(), {headers:{'Accept':'application/json','X-Firebase-ETag':'true'}});
     if(!res.ok) throw new Error(`HTTP ${res.status}`);
     const text=await res.text();
+    // 待っている間に自分が新しい状態を読み込んだ・保存した場合は、この結果は古いので使わない
+    if(seqAtStart!==stateSeq || lockDepth>0) return;
     const changed=(text!==lastStateStr);
     dbg.lastPoll={ok:true, at:nowStr(), changed, err:null};
     if(changed){
       lastStateStr=text;
       currentEtag=res.headers.get('ETag');
       state=(text && text!=='null')?normalizeState(JSON.parse(text)):null;
-      render();
+      renderFromPoll();
     } else {
       currentEtag=res.headers.get('ETag')||currentEtag;
       updateDebugPanelInPlace();
@@ -504,8 +574,28 @@ async function pollLoop(){
   }catch(e){
     dbg.lastPoll={ok:false, at:nowStr(), changed:null, err:(e&&e.message)||String(e)};
     updateDebugPanelInPlace();
+  }finally{
+    pollInFlight=false;
+    watchDecidedLottery();
   }
 }
+/* 押している最中(指を置いてから離すまで)は、ポーリングによる描き直しを待たせる。
+   描き直すと押したボタンが作り直されて、操作が無反応になるため */
+let pointerDown=false, renderPending=false;
+function renderFromPoll(){
+  if(pointerDown){ renderPending=true; return; }
+  render();
+}
+document.addEventListener('pointerdown', ()=>{ pointerDown=true; }, true);
+function releasePointer(){
+  pointerDown=false;
+  if(!renderPending) return;
+  setTimeout(()=>{ if(!pointerDown && renderPending){ renderPending=false; render(); } }, 350);
+}
+document.addEventListener('pointerup', releasePointer, true);
+document.addEventListener('pointercancel', releasePointer, true);
+/* 別のアプリから戻ってきたら、すぐに最新の状態を読み込む */
+document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible') pollLoop(); });
 
 function assignPick(teamId, playerId, round, method){
   // 安全策: 同じ球団が同じ巡に既に指名済み、またはこの選手が既に別球団に割り当て済みなら二重登録しない
@@ -717,22 +807,39 @@ async function finalizeLottery(expectedPlayerId){
   if(slot){ slot.textContent=teamDisplayName(teamById(winnerId)); slot.classList.add('winner'); }
   render();
   const playerIdForCheck=cur.playerId;
-  setTimeout(async ()=>{
-    try{
-      await withRoomLock(async ()=>{
-        await refreshState();
-        if(stateLostGuard()) return;
-        if(state.phase!=='lottery' || !state.round1.currentLottery || state.round1.currentLottery.playerId!==playerIdForCheck){
-          render(); return; // 既に他の端末が次に進めている
-        }
-        state.round1.lotteryQueue.shift();
-        if(state.round1.lotteryQueue.length>0){ state.round1.currentLottery=state.round1.lotteryQueue[0]; state.phase='lottery'; }
-        else if(state.round1.pendingTeamIds.length>0){ state.phase='round1_submit'; state.round1.currentLottery=null; }
-        else { finishRound1(); }
-        await saveState(); render();
-      });
-    }catch(e){ showToast('エラーが発生しました。画面を更新してください。'); }
-  }, 4500);
+  setTimeout(()=>advanceLottery(playerIdForCheck), 4500);
+}
+let lotteryAdvancing=false;
+/* 抽選結果の表示を終えて次へ進める(次の抽選・再指名・感想会)。expectedPlayerId の当選がまだ表示中のときだけ進める */
+async function advanceLottery(expectedPlayerId){
+  if(lotteryAdvancing) return;
+  lotteryAdvancing=true;
+  try{
+    await withRoomLock(async ()=>{
+      await refreshState();
+      if(stateLostGuard()) return;
+      const cur=state.round1.currentLottery;
+      if(state.phase!=='lottery' || !cur || cur.playerId!==expectedPlayerId || !cur.winnerTeamId){
+        render(); return; // 既に他の端末が次に進めている
+      }
+      state.round1.lotteryQueue.shift();
+      if(state.round1.lotteryQueue.length>0){ state.round1.currentLottery=state.round1.lotteryQueue[0]; state.phase='lottery'; }
+      else if(state.round1.pendingTeamIds.length>0){ state.phase='round1_submit'; state.round1.currentLottery=null; }
+      else { finishRound1(); }
+      await saveState(); render();
+    });
+  }catch(e){ showToast('エラーが発生しました。画面を更新してください。'); }
+  finally{ lotteryAdvancing=false; }
+}
+/* 抽選を引いた人が結果表示中にアプリを閉じても止まらないよう、
+   当選が出たまま約8秒たったら、参加者のだれの端末からでも次へ進める */
+let decidedSeen={playerId:null, at:0};
+function watchDecidedLottery(){
+  if(!state || isSpectator || !amClaimedHere() || state.phase!=='lottery') return;
+  const cur=state.round1.currentLottery;
+  if(!cur || !cur.winnerTeamId) return;
+  if(decidedSeen.playerId!==cur.playerId){ decidedSeen={playerId:cur.playerId, at:Date.now()}; return; }
+  if(Date.now()-decidedSeen.at>8000) advanceLottery(cur.playerId);
 }
 async function submitSnakePick(){
   if(!selectedPlayerId) return showToast('選手を選択してください');
@@ -902,7 +1009,7 @@ async function skipRoundSummary(){
 }
 async function resetRoom(){
   if(!(await showConfirm('この会議を終了し、全員のデータを削除します。よろしいですか？', 'リセットする'))) return;
-  try{ await fetch(roomUrl(), {method:'DELETE'}); }catch(e){}
+  try{ await fetchT(roomUrl(), {method:'DELETE'}); }catch(e){}
   clearIdentityLocal();
   roomCode=null; state=null; myId=null; lastStateStr=null; currentEtag=null;
   render();
@@ -1598,6 +1705,7 @@ function toggleTheme(){
   applyTheme(t);
 }
 function mountThemeBar(){
+  if(!document.getElementById('__netbar')){ const nb=document.createElement('div'); nb.id='__netbar'; nb.className='netbar'; document.body.appendChild(nb); }
   if(document.getElementById('__themebar')) return;
   const bar=document.createElement('div');
   bar.id='__themebar';
@@ -1672,6 +1780,20 @@ function render(){
   // 開いているボードのシートも最新にする
   const boardBody=document.getElementById('__board-sheet-body');
   if(boardBody){ if(state) boardBody.innerHTML=boardHTML(); else closeSheets(); }
+  markBusyButtons();
+}
+
+/* 書き込みを伴うボタンは、押してから完了まで「通信中」の見た目にし、二度押しを防ぐ */
+let busyAct=null;
+function markBusyButtons(){
+  document.querySelectorAll('[data-act].is-busy').forEach(b=>{ if(b.dataset.act!==busyAct) b.classList.remove('is-busy'); });
+  if(busyAct) document.querySelectorAll(`[data-act="${busyAct}"]`).forEach(b=>b.classList.add('is-busy'));
+}
+async function runUserAction(act, fn){
+  if(busyAct){ showToast('通信中です。少しお待ちください'); return; }
+  busyAct=act; markBusyButtons();
+  try{ await fn(); }
+  finally{ busyAct=null; markBusyButtons(); }
 }
 
 /* ---------- delegated events (メニュー等は#appの外にあるのでdocumentで受ける) ---------- */
@@ -1693,7 +1815,7 @@ document.addEventListener('click', (e)=>{
     const tc=parseInt(document.getElementById('in-teamcount').value,10)||10;
     const rd=parseInt(document.getElementById('in-rounds').value,10)||5;
     const modeEl=document.getElementById('in-mode');
-    createRoom(Math.max(2,Math.min(20,tc)), Math.max(1,Math.min(15,rd)), !!modeEl && modeEl.dataset.mode==='lottery');
+    runUserAction(act, ()=>createRoom(Math.max(2,Math.min(20,tc)), Math.max(1,Math.min(15,rd)), !!modeEl && modeEl.dataset.mode==='lottery'));
   } else if(act==='step'){
     const [inputId, delta]=id.split(':');
     const input=document.getElementById(inputId);
@@ -1703,9 +1825,9 @@ document.addEventListener('click', (e)=>{
     }
   } else if(act==='claim-team'){
     const nick=document.getElementById('in-nick').value;
-    claimTeam(id, nick);
-  } else if(act==='release-team'){ showConfirm('担当を解除しますか？','解除する').then(ok=>{ if(ok) releaseTeam(); }); }
-  else if(act==='start-draft'){ startDraft(); }
+    runUserAction(act, ()=>claimTeam(id, nick));
+  } else if(act==='release-team'){ runUserAction(act, async ()=>{ if(await showConfirm('担当を解除しますか？','解除する')) await releaseTeam(); }); }
+  else if(act==='start-draft'){ runUserAction(act, startDraft); }
   else if(act==='set-mode'){
     const box=document.getElementById('in-mode');
     if(box){ box.dataset.mode=id; box.querySelectorAll('.mode-btn').forEach(b=>b.classList.toggle('active', b.dataset.id===id)); }
@@ -1719,14 +1841,14 @@ document.addEventListener('click', (e)=>{
     el.classList.add('selected');
     document.querySelectorAll('[data-needsel]').forEach(b=>{ b.disabled=false; if(b.dataset.tpl) b.textContent=b.dataset.tpl.replace('{name}', p?p.name:''); });
     document.querySelectorAll('[data-selbox]').forEach(b=>b.innerHTML=selboxHTML(p));
-  } else if(act==='submit-r1'){ submitRound1(); }
-  else if(act==='reveal-r1'){ revealRound1(); }
+  } else if(act==='submit-r1'){ runUserAction(act, submitRound1); }
+  else if(act==='reveal-r1'){ runUserAction(act, revealRound1); }
   else if(act==='draw-lottery'){ drawLottery(); }
-  else if(act==='submit-sn'){ submitSnakePick(); }
-  else if(act==='reset-room'){ resetRoom(); }
-  else if(act==='ack-round-summary'){ ackRoundSummary(); }
-  else if(act==='skip-round-summary'){ skipRoundSummary(); }
-  else if(act==='retire-team'){ retireTeam(); }
+  else if(act==='submit-sn'){ runUserAction(act, submitSnakePick); }
+  else if(act==='reset-room'){ runUserAction(act, resetRoom); }
+  else if(act==='ack-round-summary'){ runUserAction(act, ackRoundSummary); }
+  else if(act==='skip-round-summary'){ runUserAction(act, skipRoundSummary); }
+  else if(act==='retire-team'){ runUserAction(act, retireTeam); }
   else if(act==='download-board'){ downloadBoardImage(); }
   else if(act==='open-menu'){ openMenu(); }
   else if(act==='menu-board'){ openBoardSheet(); }
